@@ -141,10 +141,6 @@ int chosenPatchNumber = 0;
 int candidatePatchNumber = 0;
 int selectedTriggerChannel = -1;
 
-#ifdef DEBUG
-char tmp[255];
-#endif
-
 Adafruit_NeoPixel pixels(NUM_NEOP_LEDS, PIXEL_PIN, NEO_GRB + NEO_KHZ800); // Set up the NeoPixel ring
 
 // Fill the dots one after the other with a color.
@@ -251,10 +247,6 @@ bool checkButtons(int &selectedChannel, int escapeButton) {
     if (previousSelectedChannel != selectedChannel) {
       previousSelectedChannel = selectedChannel;
       change = true;
-      #ifdef DEBUG
-        sprintf(tmp, "buttonValue: %d -> %c", buttonValue, (3 - selectedChannel) + 65);
-        Serial.println(tmp);
-      #endif      
     } else {
       change = false;
     }
@@ -340,10 +332,6 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
 }
 
 void writePatchesToMemory(Patch patches[], unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
-#ifdef DEBUG
-  sprintf(tmp, "Writing all patches to EEPROM and setting %d as chosen patch", patchNumber);
-  Serial.println(tmp);
-#endif
   int address = EEPROM_BASE_ADDRESS;
   // Store the currently selected trigger channel number.
   // Store the number indicating the currently loaded program.
@@ -367,10 +355,6 @@ void writePatchesToMemory(Patch patches[], unsigned int memoryCellsInUse, int pa
 }
 
 void writePatchToMemory(Patch thisPatch, unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
-#ifdef DEBUG
-  sprintf(tmp, "Writing to patch[%d] in EEPROM and setting %d as the chosen patch number.", patchNumber, patchNumber);
-  Serial.println(tmp);
-#endif
   int address = EEPROM_BASE_ADDRESS;
   // Store the currently selected trigger channel number.
   // Store the number indicating the currently loaded program.
@@ -406,10 +390,6 @@ void writePatchNumberToMemory(int patchNumber) {
 void writeTriggerChannelToMemory(int triggerChannel) {
   int address = EEPROM_BASE_ADDRESS;
   EEPROM.put(address, triggerChannel); 
-  #ifdef DEBUG
-    sprintf(tmp, "Storing trigger channel %d to memory", triggerChannel);
-    Serial.println(tmp);
-  #endif
 }
 
 void createEmptyPatch(Patch &emptyPatch){
@@ -474,13 +454,6 @@ int readPatchesFromMemory(Patch patches[], unsigned int &memoryCellsInUse, unsig
       createEmptyPatch(patches[i]);
     }
   }
-  #ifdef DEBUG
-    sprintf(tmp, "Reading chosen patch nr: %d", chosenPatchNumber);   
-    Serial.println(tmp);
-    sprintf(tmp, "Reading selected trigger channel: %d", selectedTriggerChannel);
-    Serial.println(tmp);
-    displayPatch(chosenPatchNumber);
-  #endif
   return(chosenPatchNumber);
 }
 
@@ -572,9 +545,6 @@ void setup() {
     Serial.println("Now recompile and upload with #define INITIALIZE commented out");
     Serial.println("to run Euclid-O-Matic (a Euclidean sequencer / rhythm generator.");
   #else
-    #ifdef DEBUG
-      Serial.begin(115200);                     // Set up the serial console for debugging messages
-    #endif
   pinMode(PROG_PIN, INPUT_PULLUP);     // Assign the encoder switch which closes to ground and uses an internal pullup resistor.
   pinMode(CLK_PIN, INPUT);             // Assign the external clock selector switch.
   pinMode(TRIG_D_PIN, OUTPUT);         // Assign trigger 1 out.
@@ -782,9 +752,6 @@ void loop() {
         if (candidatePatchNumber < 0) {
           candidatePatchNumber = NR_OF_MEMORY_CELLS - 1;
         }
-        #ifdef DEBUG
-          Serial.println(candidatePatchNumber);
-        #endif
       } else if (newPosition < oldPosition - 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
         // Rotate the active pattern one bit to the left (clockwise).
         oldPosition = newPosition;                // The current encoder position will be the old position next loop.
@@ -792,9 +759,6 @@ void loop() {
         if (candidatePatchNumber > NR_OF_MEMORY_CELLS - 1) {
           candidatePatchNumber = 0;
         }
-        #ifdef DEBUG
-          Serial.println(candidatePatchNumber);
-        #endif
       }  
       switch (programButtonName) { 
         case TRIG_A: // and if Button-A is pressed, then change the chosenPatchNumber.        
