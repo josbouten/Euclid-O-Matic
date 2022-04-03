@@ -1,3 +1,7 @@
+# Euclid-O-Matic
+
+![Euclid-O-Matic Euclidean Sequencer](20220212_Euclid-O-Matic_v0.1.jpg)
+
 Sun Apr  3 15:01:35 CEST 2022
 
 This project is based on a project called 'Euclidean Rhythm Generator Kosmo/Eurorack' 
