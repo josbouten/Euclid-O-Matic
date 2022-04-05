@@ -565,8 +565,6 @@ void setup() {
   pixels.clear();                      // And clear it
   // Read patches from EEPROM.
   chosenPatchNumber = readPatchesFromMemory(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
-  sprintf(tmp, "setup channel: %d", selectedTriggerChannel);
-  Serial.println(tmp);
 #endif  
   // Initialize step count for each trigger channel.
   for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
