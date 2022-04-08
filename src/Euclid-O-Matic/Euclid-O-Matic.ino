@@ -125,6 +125,10 @@ Encoder myEnc(3, 4);              // Attach rotary encoder to digital pins 3 and
 #define TRIG_C 1
 #define TRIG_D 0
 
+#ifdef DEBUG
+  char tmp[255];
+#endif
+
 static int step[4];          // The active step for each trigger channel.
 struct Patch {
   int pulses[4];             // The number of pulses to be generated for each of the 4 triggers.
@@ -133,6 +137,7 @@ struct Patch {
 };
 
 Patch emptyPatch;
+Patch currentPatch; // The patch the sequencer is playing.
 
 Patch patches[NR_OF_MEMORY_CELLS];
 unsigned int delayTime  = 125;   // The time between steps persists in each loop.
@@ -177,7 +182,7 @@ unsigned int euclid(Patch thisPatch, int channelNumber) {
 
 void rotateLeft(unsigned int &pattern, int channelNumber) {
   int DROPPED_MSB;                        // Need to keep track of any bits dropped off the left
-  DROPPED_MSB = (pattern >> (patches[chosenPatchNumber].patternLength[channelNumber] - 1)) & 1; // aka the old most significant bit
+  DROPPED_MSB = (pattern >> (currentPatch.patternLength[channelNumber] - 1)) & 1; // aka the old most significant bit
   pattern = (pattern << 1) | DROPPED_MSB; // Shift all the bits in Pattern to the left by 1 and
                                           // add back in the new least significant bit if needed
 }
@@ -191,8 +196,8 @@ void rotateLeft(unsigned int &pattern, int channelNumber) {
 void rotateRight(unsigned int &pattern, int channelNumber) {
   int DROPPED_LSB;                        // Need to keep track of any bits dropped off the right
   DROPPED_LSB = pattern & 1;              // aka the old least signficant bit.
-  pattern = (pattern >> 1) & (~(1 << (patches[chosenPatchNumber].patternLength[channelNumber] - 1))); // Shift all the bits in Pattern to the right by 1.
-  pattern = pattern | (DROPPED_LSB << (patches[chosenPatchNumber].patternLength[channelNumber] - 1)); // Tack the old LSB onto the new MSB if needed
+  pattern = (pattern >> 1) & (~(1 << (currentPatch.patternLength[channelNumber] - 1))); // Shift all the bits in Pattern to the right by 1.
+  pattern = pattern | (DROPPED_LSB << (currentPatch.patternLength[channelNumber] - 1)); // Tack the old LSB onto the new MSB if needed
 }
 
 
@@ -314,7 +319,7 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
   // Choose the color of the 'mode' for this. This makes it easier to see in 
   // what mode the sequencer is.
   pixels.setPixelColor(0, pixels.Color(R, G, B));
-  pixels.setPixelColor(patches[chosenPatchNumber].patternLength[triggerChannel] - 1, pixels.Color(R, G, B)); 
+  pixels.setPixelColor(currentPatch.patternLength[triggerChannel] - 1, pixels.Color(R, G, B)); 
   
   switch (channelNumber) {
     case 0: R = 20; G = 0;  B = 0;  break;  // Pattern/trigger 1 will be shown in red.
@@ -356,6 +361,7 @@ void writePatchesToMemory(Patch patches[], unsigned int memoryCellsInUse, int pa
 
 void writePatchToMemory(Patch thisPatch, unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
   int address = EEPROM_BASE_ADDRESS;
+  Patch p;
   // Store the currently selected trigger channel number.
   // Store the number indicating the currently loaded program.
   // Store which memory cells are in use.
@@ -374,7 +380,13 @@ void writePatchToMemory(Patch thisPatch, unsigned int memoryCellsInUse, int patc
   // Only write/replace chosen patch to/in EEPROM.
   for (int i = 0; i < NR_OF_MEMORY_CELLS; i++) {
     if (i == patchNumber) { 
-      EEPROM.put(address, thisPatch);
+      #ifdef DEBUG
+        sprintf(tmp, "write(address) = %d %d", patchNumber, i);
+        Serial.println(tmp);
+        displayPatch(thisPatch);
+      #endif
+      p = EEPROM.put(address, thisPatch);
+      displayPatch(p);
       break; // We end here.
     }
     address += sizeof(Patch);
@@ -392,20 +404,32 @@ void writeTriggerChannelToMemory(int triggerChannel) {
   EEPROM.put(address, triggerChannel); 
 }
 
-void createEmptyPatch(Patch &emptyPatch){
+//void copyPatch(Patch patches[], int sourcePatchNumber, int destinationPatchNumber){ 
+//  for (int i = 0; i < 4; i++) {
+//    patches[destinationPatchNumber].pulses[i] = patches[sourcePatchNumber].pulses[i];
+//    patches[destinationPatchNumber].patternLength[i] = patches[sourcePatchNumber].patternLength[i];
+//    patches[destinationPatchNumber].channelPattern[i] = patches[sourcePatchNumber].channelPattern[i];
+//  }
+//}
+
+void copyPatch(Patch srcPatch, Patch &dstPatch) {
   for (int i = 0; i < 4; i++) {
-    emptyPatch.pulses[i] = 0;
-    emptyPatch.patternLength[i] = 0;
-    emptyPatch.channelPattern[i] = 0;
+    dstPatch.pulses[i] = srcPatch.pulses[i];
+    dstPatch.patternLength[i] = srcPatch.patternLength[i];
+    dstPatch.channelPattern[i] = srcPatch.channelPattern[i];
   }
 }
 
-void copyPatch(Patch patches[], int sourcePatchNumber, int destinationPatchNumber){ 
+void createEmptyPatch(Patch &dstPatch) {
   for (int i = 0; i < 4; i++) {
-    patches[destinationPatchNumber].pulses[i] = patches[sourcePatchNumber].pulses[i];
-    patches[destinationPatchNumber].patternLength[i] = patches[sourcePatchNumber].patternLength[i];
-    patches[destinationPatchNumber].channelPattern[i] = patches[sourcePatchNumber].channelPattern[i];
+    dstPatch.pulses[i] = 0;
+    dstPatch.patternLength[i] = 0;
+    dstPatch.channelPattern[i] = 0;
   }
+}
+
+void createEmptyPatch(Patch emptyPatch, Patch &dstPatch){
+  copyPatch(emptyPatch, dstPatch);
 }
 
 void displayPatch(int patchNumber) {
@@ -424,6 +448,22 @@ void displayPatch(int patchNumber) {
     sprintf(tmp, "length[%d] = %d", j, patches[patchNumber].patternLength[j]);
     Serial.println(tmp);
   } Serial.print("\n");
+}
+
+void displayPatch(Patch thisPatch) {
+  char tmp[255];
+  for (int j = 0; j < 4; j++) {
+    sprintf(tmp, "pulses[%d] = %d", j, thisPatch.pulses[j]);
+    Serial.println(tmp);
+  }
+  for (int j = 0; j < 4; j++) {
+    sprintf(tmp, "pattern[%d] = %d", j, thisPatch.channelPattern[j]);
+    Serial.println (tmp);
+  } 
+  for (int j = 0; j < 4; j++) {
+    sprintf(tmp, "length[%d] = %d", j, thisPatch.patternLength[j]);
+    Serial.println(tmp);
+  } Serial.print("\n");  
 }
 
 int readPatchesFromMemory(Patch patches[], unsigned int &memoryCellsInUse, unsigned int &delayTime, int &selectedTriggerChannel) {
@@ -538,8 +578,9 @@ void initializePatchInEeprom() {
 }
  
 void setup() {
+  // Set up the serial console for debugging messages
+  Serial.begin(115200); 
   #ifdef INITIALIZE  
-    Serial.begin(115200);                     // Set up the serial console for debugging messages
     initializePatchInEeprom();
     Serial.println("Successfuly written 16 default patches to EEPROM.");
     Serial.println("Now recompile and upload with #define INITIALIZE commented out");
@@ -563,8 +604,10 @@ void setup() {
   pixels.clear();
   testNeoPixel();
   pixels.clear();                      // And clear it
-  // Read patches from EEPROM.
+  // Read stored patches from EEPROM into 'patches'.
   chosenPatchNumber = readPatchesFromMemory(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
+  // Load the current patch with the stored information.
+  copyPatch(patches[chosenPatchNumber], currentPatch);
 #endif  
   // Initialize step count for each trigger channel.
   for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
@@ -644,22 +687,22 @@ void loop() {
   // Let the left top Func input (Func 1) change the left most
   // trigger output (Trig A).
   if ((f1In > HALF_DAC_RANGE) && (prevF1 < HALF_DAC_RANGE)) {
-    rotateLeft(patches[chosenPatchNumber].channelPattern[TRIG_D], TRIG_D);
+    rotateLeft(currentPatch.channelPattern[TRIG_D], TRIG_D);
   }
   prevF1 = f1In;
 
   if ((f2In > HALF_DAC_RANGE) && (prevF2 < HALF_DAC_RANGE)) {
-    rotateLeft(patches[chosenPatchNumber].channelPattern[TRIG_C], TRIG_C);
+    rotateLeft(currentPatch.channelPattern[TRIG_C], TRIG_C);
   }
   prevF2 = f2In;
 
   if ((f3In > HALF_DAC_RANGE) && (prevF3 < HALF_DAC_RANGE)) {
-      rotateLeft(patches[chosenPatchNumber].channelPattern[TRIG_B], TRIG_B);
+      rotateLeft(currentPatch.channelPattern[TRIG_B], TRIG_B);
   }
   prevF3 = f3In;
 
   if ((f4In > HALF_DAC_RANGE) && (prevF4 < HALF_DAC_RANGE)) {
-    rotateLeft(patches[chosenPatchNumber].channelPattern[TRIG_A], TRIG_A);
+    rotateLeft(currentPatch.channelPattern[TRIG_A], TRIG_A);
   }
   prevF4 = f4In;
 
@@ -693,53 +736,53 @@ void loop() {
       }
       else { // Increase/decrease the pattern length for the active pattern.
         if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-          patches[chosenPatchNumber].patternLength[selectedTriggerChannel]++;// Increase the pattern length by 1 for the active pattern.
-          if (patches[chosenPatchNumber].patternLength[selectedTriggerChannel] > NUM_NEOP_LEDS) {
-            patches[chosenPatchNumber].patternLength[selectedTriggerChannel] = NUM_NEOP_LEDS;
+          currentPatch.patternLength[selectedTriggerChannel]++;// Increase the pattern length by 1 for the active pattern.
+          if (currentPatch.patternLength[selectedTriggerChannel] > NUM_NEOP_LEDS) {
+            currentPatch.patternLength[selectedTriggerChannel] = NUM_NEOP_LEDS;
           }
           oldPosition = newPosition;              // The current encoder position will be the old position next loop.
           // Compute a Euclidean Rhythm for the active pattern.
-          patches[chosenPatchNumber].channelPattern[selectedTriggerChannel] = euclid(patches[chosenPatchNumber], selectedTriggerChannel);
+          currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
         } else if (newPosition > oldPosition + 3) {      // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-          patches[chosenPatchNumber].patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
-          if (patches[chosenPatchNumber].patternLength[selectedTriggerChannel] < 0) {
-            patches[chosenPatchNumber].patternLength[selectedTriggerChannel] = 0;
+          currentPatch.patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
+          if (currentPatch.patternLength[selectedTriggerChannel] < 0) {
+            currentPatch.patternLength[selectedTriggerChannel] = 0;
           }
           oldPosition = newPosition;              // The current encoder position will be the old position next loop.
           // Compute a Euclidean Rhythm for the active pattern.
-          patches[chosenPatchNumber].channelPattern[selectedTriggerChannel] = euclid(patches[chosenPatchNumber], selectedTriggerChannel);
+          currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
         }
         break;
       }
       break;
     case NUM_PULSE_MODE: // Mode 2 - Change the number of Euclidean Rhythm pulses of the active pattern.
       if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-        patches[chosenPatchNumber].pulses[selectedTriggerChannel]++;       // Increase the number of pulses in the active pattern.
-        if (patches[chosenPatchNumber].pulses[selectedTriggerChannel] > patches[chosenPatchNumber].patternLength[selectedTriggerChannel]) {
-          patches[chosenPatchNumber].pulses[selectedTriggerChannel] = patches[chosenPatchNumber].patternLength[selectedTriggerChannel];// Limit the largest number of pulses to NumSteps.
+        currentPatch.pulses[selectedTriggerChannel]++;       // Increase the number of pulses in the active pattern.
+        if (currentPatch.pulses[selectedTriggerChannel] > currentPatch.patternLength[selectedTriggerChannel]) {
+          currentPatch.pulses[selectedTriggerChannel] = currentPatch.patternLength[selectedTriggerChannel];// Limit the largest number of pulses to NumSteps.
         }
         oldPosition = newPosition;              // The current encoder position will be the old position next loop.
         // Compute a Euclidean Rhythm for the active pattern.
-        patches[chosenPatchNumber].channelPattern[selectedTriggerChannel] = euclid(patches[chosenPatchNumber], selectedTriggerChannel);                
+        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);                
       } else if (newPosition > oldPosition + 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-        patches[chosenPatchNumber].pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
-        if (patches[chosenPatchNumber].pulses[selectedTriggerChannel] < 0) {
-          patches[chosenPatchNumber].pulses[selectedTriggerChannel] = 0;            // Limit the smallest number of pulses to zero.
+        currentPatch.pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
+        if (currentPatch.pulses[selectedTriggerChannel] < 0) {
+          currentPatch.pulses[selectedTriggerChannel] = 0;            // Limit the smallest number of pulses to zero.
         }
         oldPosition = newPosition;              // The current encoder position will be the old position next loop.
         // Compute a Euclidean Rhythm for the active pattern.
-        patches[chosenPatchNumber].channelPattern[selectedTriggerChannel] = euclid(patches[chosenPatchNumber], selectedTriggerChannel);        
+        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);        
       }
 
       break;
     case ROTATE_MODE: // Mode 3 - Rotate the Euclidean Rhythm of the active pattern.
       if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
         oldPosition = newPosition;               // The current encoder position will be the old position next loop.
-        rotateRight(patches[chosenPatchNumber].channelPattern[selectedTriggerChannel], selectedTriggerChannel);
+        rotateRight(currentPatch.channelPattern[selectedTriggerChannel], selectedTriggerChannel);
       } else if (newPosition < oldPosition - 3){ // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
         oldPosition = newPosition;               // The current encoder position will be the old position next loop.
         // Rotate the active pattern one bit to the left (clockwise).
-        rotateLeft(patches[chosenPatchNumber].channelPattern[selectedTriggerChannel], selectedTriggerChannel);
+        rotateLeft(currentPatch.channelPattern[selectedTriggerChannel], selectedTriggerChannel);
       }
       break;
     case PROGRAM_MODE: // Mode 4 - Store all patterns to eprom and store the current patchnumber / recall all patterns
@@ -759,14 +802,15 @@ void loop() {
         }
       }  
       switch (programButtonName) { 
-        case TRIG_A: // and if Button-A is pressed, then change the chosenPatchNumber.        
+        case TRIG_A: // and if Button-A is pressed, then copy the stored pattern from EEPROM and put it in the current pattern.
           if (prevProgramButtonValue == 0) {
             prevProgramButtonValue = 1;            
             chosenPatchNumber = candidatePatchNumber;
-            // If the cell did not contain a stored patch, create an empty patch.
-            if (!(memoryCellsInUse & (1 << chosenPatchNumber))) {
-              createEmptyPatch(patches[chosenPatchNumber]);
-            }         
+            #ifdef DEBUG
+              sprintf(tmp, "reading patchNumber: %d", candidatePatchNumber);
+              Serial.println(tmp);
+            #endif
+            copyPatch(patches[chosenPatchNumber], currentPatch);
             // The counts may have changed, so we want to sync the chosen patterns.
             // Therefor, we initialize the step count for each trigger channel.
             for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
@@ -777,27 +821,31 @@ void loop() {
             #ifdef SIGNAL_PROGRAMMING            
               colorWipe(pixels.Color(0, 0, 5), 10); // Blue
             #endif
-            
+            displayPatch(chosenPatchNumber);
           }
           break;
-        case TRIG_B: // Wipe the current patch.
+        case TRIG_B: // Wipe the memory cell chosen. Note, this does not affect the current patch.
           if (prevProgramButtonValue == 0) {
             prevProgramButtonValue = 1;
             memoryCellsInUse = memoryCellsInUse & ~(1 << candidatePatchNumber);            
+            copyPatch(emptyPatch, patches[candidatePatchNumber]);
             writePatchToMemory(emptyPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
             #ifdef SIGNAL_PROGRAMMING                        
               colorWipe(pixels.Color(5, 5, 0), 10); // Yellow
             #endif
           }
           break;
-        case TRIG_D: // and if Button-D is pressed, then write all patches to the EEPROM and the chosen patch number.
+        case TRIG_D: // If Button-D is pressed, then write the current patch to the EEPROM at the chosen patch location.
           if (prevProgramButtonValue == 0) {
             prevProgramButtonValue = 1;            
-            // Copy contents of chosen patch to candidate patch.
-            copyPatch(patches, chosenPatchNumber, candidatePatchNumber);
             memoryCellsInUse = memoryCellsInUse | (1 << candidatePatchNumber);
             // Write chosen patch to candidate location in EEPROM.
-            writePatchToMemory(patches[chosenPatchNumber], memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
+            #ifdef DEBUG
+              sprintf(tmp, "writing to %d", candidatePatchNumber);
+              Serial.println(tmp);            
+              displayPatch(currentPatch);              
+            #endif
+            writePatchToMemory(currentPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
             #ifdef SIGNAL_PROGRAMMING                        
               colorWipe(pixels.Color(0, 5, 0), 10); // Green
             #endif            
@@ -812,8 +860,8 @@ void loop() {
     showPatchMemory(candidatePatchNumber, memoryCellsInUse);
   } else {
     // Display the active pattern.
-    showBitPattern(selectedTriggerChannel, patches[chosenPatchNumber].channelPattern[selectedTriggerChannel], 
-                   patches[chosenPatchNumber].patternLength[selectedTriggerChannel], selectedTriggerChannel, mode);
+    showBitPattern(selectedTriggerChannel, currentPatch.channelPattern[selectedTriggerChannel], 
+                   currentPatch.patternLength[selectedTriggerChannel], selectedTriggerChannel, mode);
   }
 
   if (digitalRead(CLK_PIN) == true) {             // If we're using an external clock pulse.
@@ -854,10 +902,10 @@ void loop() {
     pixels.show();                                // Display the step/mode pixel.
 
     // Turn on trigger output + LED A..D if the current step is in the Euclidean Rhythm.
-    if (patches[chosenPatchNumber].channelPattern[TRIG_A] & (1 << step[TRIG_A])) digitalWrite(TRIG_A_PIN, LOW);
-    if (patches[chosenPatchNumber].channelPattern[TRIG_B] & (1 << step[TRIG_B])) digitalWrite(TRIG_B_PIN, LOW);
-    if (patches[chosenPatchNumber].channelPattern[TRIG_C] & (1 << step[TRIG_C])) digitalWrite(TRIG_C_PIN, LOW);
-    if (patches[chosenPatchNumber].channelPattern[TRIG_D] & (1 << step[TRIG_D])) digitalWrite(TRIG_D_PIN, LOW);     
+    if (currentPatch.channelPattern[TRIG_A] & (1 << step[TRIG_A])) digitalWrite(TRIG_A_PIN, LOW);
+    if (currentPatch.channelPattern[TRIG_B] & (1 << step[TRIG_B])) digitalWrite(TRIG_B_PIN, LOW);
+    if (currentPatch.channelPattern[TRIG_C] & (1 << step[TRIG_C])) digitalWrite(TRIG_C_PIN, LOW);
+    if (currentPatch.channelPattern[TRIG_D] & (1 << step[TRIG_D])) digitalWrite(TRIG_D_PIN, LOW);     
     digitalWrite(SEQ_CLOCK_OUT_PIN, LOW);
   }
 }
