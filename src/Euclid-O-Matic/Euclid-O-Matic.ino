@@ -54,10 +54,7 @@
 // Show some debug info on the serial port.
 #define DEBUG 1
 
-// #define INITIALIZE 1
-
-// Show a circle of leds when storing, recalling or clearing a patch in EEPROM.
-// #SIGNAL_PROGRAMMING 1
+//#define INITIALIZE 1
 
 #include <Adafruit_NeoPixel.h>    // Include Adafruit_NeoPixel library
 #include <Encoder.h>              // Include rotary encoder library
@@ -129,11 +126,11 @@ Encoder myEnc(3, 4);              // Attach rotary encoder to digital pins 3 and
   char tmp[255];
 #endif
 
-static int step[4];          // The active step for each trigger channel.
+static int step[4];               // The active step for each trigger channel.
 struct Patch {
-  int pulses[4];             // The number of pulses to be generated for each of the 4 triggers.
-  int patternLength[4];      // The pattern length for each trigger output.
-  unsigned int channelPattern[4];
+  int pulses[4];                  // The number of pulses to be generated for each of the 4 triggers.
+  int patternLength[4];           // The pattern length for each trigger output.
+  unsigned int channelPattern[4]; // The pattern of Euclidean distributed pulses,
 };
 
 Patch emptyPatch;
@@ -169,7 +166,7 @@ unsigned int euclid(Patch thisPatch, int channelNumber) {
     bucket = bucket + thisPatch.pulses[channelNumber];               // Fill a "bucket" with the number of pulses to be allocated.
     if (bucket >= thisPatch.patternLength[channelNumber]) {          // If the bucket exceeds the maximum number of steps then "empty
       bucket = bucket - thisPatch.patternLength[channelNumber];      // the bucket" by setting the i-th bit in the sequence and
-      number |= 1 << i;  // refill the now empty bucket with the remainder.
+      number |= 1 << i;                                              // Refill the now empty bucket with the remainder.
     }
   }
   return number; // Return the sequence encoded as the bits set in Number.
@@ -179,27 +176,23 @@ unsigned int euclid(Patch thisPatch, int channelNumber) {
 // off to the left (of the most significant bit) is shifted around to become the new least
 // significant bit.  For our purposes, this means that we can rotate the Euclidean Rhythm clockwise
 // on the ring.
-
-void rotateLeft(unsigned int &pattern, int channelNumber) {
+void rotateLeft(Patch &thisPatch, int channelNumber) {
   int DROPPED_MSB;                        // Need to keep track of any bits dropped off the left
-  DROPPED_MSB = (pattern >> (currentPatch.patternLength[channelNumber] - 1)) & 1; // aka the old most significant bit
-  pattern = (pattern << 1) | DROPPED_MSB; // Shift all the bits in Pattern to the left by 1 and
+  DROPPED_MSB = (thisPatch.channelPattern[channelNumber] >> (thisPatch.patternLength[channelNumber] - 1)) & 1; // aka the old most significant bit
+  thisPatch.channelPattern[channelNumber] = (thisPatch.channelPattern[channelNumber] << 1) | DROPPED_MSB; // Shift all the bits in Pattern to the left by 1 and
                                           // add back in the new least significant bit if needed
 }
-
 
 // The rotateRight function shifts the bits in an unsigned integer by one place. Any bit that falls
 // off to the right (of the least significant bit) is shifted around to become the new most
 // significant bit.  For our purposes, this means that we can rotate the Euclidean Rhythm counter
 // clockwise on the ring.
-
-void rotateRight(unsigned int &pattern, int channelNumber) {
+void rotateRight(Patch &thisPatch, int channelNumber) {
   int DROPPED_LSB;                        // Need to keep track of any bits dropped off the right
-  DROPPED_LSB = pattern & 1;              // aka the old least signficant bit.
-  pattern = (pattern >> 1) & (~(1 << (currentPatch.patternLength[channelNumber] - 1))); // Shift all the bits in Pattern to the right by 1.
-  pattern = pattern | (DROPPED_LSB << (currentPatch.patternLength[channelNumber] - 1)); // Tack the old LSB onto the new MSB if needed
+  DROPPED_LSB = thisPatch.channelPattern[channelNumber] & 1;              // aka the old least signficant bit.
+  thisPatch.channelPattern[channelNumber] = (thisPatch.channelPattern[channelNumber] >> 1) & (~(1 << (thisPatch.patternLength[channelNumber] - 1))); // Shift all the bits in Pattern to the right by 1.
+  thisPatch.channelPattern[channelNumber] = thisPatch.channelPattern[channelNumber] | (DROPPED_LSB << (thisPatch.patternLength[channelNumber] - 1)); // Tack the old LSB onto the new MSB if needed
 }
-
 
 // checkButtons decodes the voltage values from the button voltage divider circuit. The values here
 // assume that 1k, 2.2k, 4.7k and 10k resistors are switched in line with a 5V source and dropped
@@ -295,7 +288,6 @@ void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
   pixels.show();  // Update the pixels displayed on the NeoPixel ring.
 }
 
-
 void cursorColor(int mode, int &R, int &G, int &B) {
   switch (mode) { 
     case PATTERN_LENGTH_MODE: R = 10; G = 10; B = 10; break; // Use the mode to determine the color.
@@ -304,7 +296,7 @@ void cursorColor(int mode, int &R, int &G, int &B) {
   }  
 }
 
-void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, int triggerChannel, int mode) {
+void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, int mode) {
   // showBitPattern displays a Euclidean pattern associated with the bits set in Pattern. The color of the
   // pattern is dictated by channel number "channelNumber". You can change the ring colors to match the buttonValue
   // and output LEDs you use in your build here.
@@ -319,7 +311,7 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
   // Choose the color of the 'mode' for this. This makes it easier to see in 
   // what mode the sequencer is.
   pixels.setPixelColor(0, pixels.Color(R, G, B));
-  pixels.setPixelColor(currentPatch.patternLength[triggerChannel] - 1, pixels.Color(R, G, B)); 
+  pixels.setPixelColor(currentPatch.patternLength[channelNumber] - 1, pixels.Color(R, G, B)); 
   
   switch (channelNumber) {
     case 0: R = 20; G = 0;  B = 0;  break;  // Pattern/trigger 1 will be shown in red.
@@ -336,7 +328,7 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
   pixels.show(); // Update the pixels displayed on the NeoPixel led-ring.
 }
 
-void writePatchesToMemory(Patch patches[], unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
+void writePatchesToEEPROM(Patch patches[], unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
   int address = EEPROM_BASE_ADDRESS;
   // Store the currently selected trigger channel number.
   // Store the number indicating the currently loaded program.
@@ -359,9 +351,8 @@ void writePatchesToMemory(Patch patches[], unsigned int memoryCellsInUse, int pa
   }
 }
 
-void writePatchToMemory(Patch thisPatch, unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
+void writePatchToEEPROM(Patch thisPatch, unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
   int address = EEPROM_BASE_ADDRESS;
-  Patch p;
   // Store the currently selected trigger channel number.
   // Store the number indicating the currently loaded program.
   // Store which memory cells are in use.
@@ -380,37 +371,23 @@ void writePatchToMemory(Patch thisPatch, unsigned int memoryCellsInUse, int patc
   // Only write/replace chosen patch to/in EEPROM.
   for (int i = 0; i < NR_OF_MEMORY_CELLS; i++) {
     if (i == patchNumber) { 
-      #ifdef DEBUG
-        sprintf(tmp, "write(address) = %d %d", patchNumber, i);
-        Serial.println(tmp);
-        displayPatch(thisPatch);
-      #endif
-      p = EEPROM.put(address, thisPatch);
-      displayPatch(p);
+      EEPROM.put(address, thisPatch);
       break; // We end here.
     }
     address += sizeof(Patch);
   }
 }
 
-void writePatchNumberToMemory(int patchNumber) {
+void writePatchNumberToEEPROM(int patchNumber) {
   int address = EEPROM_BASE_ADDRESS + sizeof(int);
   // Store this program number as the current program number.
   EEPROM.put(address, patchNumber);
 }
 
-void writeTriggerChannelToMemory(int triggerChannel) {
+void writeTriggerChannelToEEPROM(int triggerChannel) {
   int address = EEPROM_BASE_ADDRESS;
   EEPROM.put(address, triggerChannel); 
 }
-
-//void copyPatch(Patch patches[], int sourcePatchNumber, int destinationPatchNumber){ 
-//  for (int i = 0; i < 4; i++) {
-//    patches[destinationPatchNumber].pulses[i] = patches[sourcePatchNumber].pulses[i];
-//    patches[destinationPatchNumber].patternLength[i] = patches[sourcePatchNumber].patternLength[i];
-//    patches[destinationPatchNumber].channelPattern[i] = patches[sourcePatchNumber].channelPattern[i];
-//  }
-//}
 
 void copyPatch(Patch srcPatch, Patch &dstPatch) {
   for (int i = 0; i < 4; i++) {
@@ -426,10 +403,6 @@ void createEmptyPatch(Patch &dstPatch) {
     dstPatch.patternLength[i] = 0;
     dstPatch.channelPattern[i] = 0;
   }
-}
-
-void createEmptyPatch(Patch emptyPatch, Patch &dstPatch){
-  copyPatch(emptyPatch, dstPatch);
 }
 
 void displayPatch(int patchNumber) {
@@ -466,7 +439,7 @@ void displayPatch(Patch thisPatch) {
   } Serial.print("\n");  
 }
 
-int readPatchesFromMemory(Patch patches[], unsigned int &memoryCellsInUse, unsigned int &delayTime, int &selectedTriggerChannel) {
+int readPatchesFromEEPROM(Patch patches[], unsigned int &memoryCellsInUse, unsigned int &delayTime, int &selectedTriggerChannel) {
   // Read the currently selected trigger channel number.
   // Read the patch number.
   // Read which memory cells are in use.
@@ -495,6 +468,30 @@ int readPatchesFromMemory(Patch patches[], unsigned int &memoryCellsInUse, unsig
     }
   }
   return(chosenPatchNumber);
+}
+
+void readPatchFromEEPROM(Patch patches[], int chosenPatchNumber) {
+  // Read one particular patch from the EEPROM.
+  
+  int address = EEPROM_BASE_ADDRESS;
+  // Read only the content of the patch.
+  // selectedTriggerChannel
+  address += sizeof(int);
+  // patchNumber
+  address += sizeof(int);
+  // memoryCellsInUse
+  address += sizeof(int);  
+  // delayTime
+  address += sizeof(int);
+  for (int i = 0; i < NR_OF_MEMORY_CELLS; i++) {
+    // patches[i]
+    if (i == chosenPatchNumber) {
+      EEPROM.get(address, patches[i]);
+      displayPatch(patches[i]);
+      break;
+    }
+    address += sizeof(Patch);
+  }
 }
 
 void testAllLeds() {
@@ -574,7 +571,7 @@ void initializePatchInEeprom() {
         patches[patchNr].patternLength[i] = 0;
       }
   }
-  writePatchesToMemory(patches, memoryCellsInUse, initialPatchNr, delayTime, selectedTriggerChannel);
+  writePatchesToEEPROM(patches, memoryCellsInUse, initialPatchNr, delayTime, selectedTriggerChannel);
 }
  
 void setup() {
@@ -605,7 +602,10 @@ void setup() {
   testNeoPixel();
   pixels.clear();                      // And clear it
   // Read stored patches from EEPROM into 'patches'.
-  chosenPatchNumber = readPatchesFromMemory(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
+  chosenPatchNumber = readPatchesFromEEPROM(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
+  candidatePatchNumber = chosenPatchNumber;
+  sprintf(tmp, "Read from EEPROM chosenPatchNumber: %d", chosenPatchNumber);
+  Serial.println(tmp);
   // Load the current patch with the stored information.
   copyPatch(patches[chosenPatchNumber], currentPatch);
 #endif  
@@ -657,7 +657,7 @@ void loop() {
   } else {
     change = checkButtons(selectedTriggerChannel, escapeButton);// Query the trigger buttons and update the active trigger if needed.
     if (change) { // Remember the channel chosen (this will be recalled when powering up).
-      writeTriggerChannelToMemory(selectedTriggerChannel);
+      writeTriggerChannelToEEPROM(selectedTriggerChannel);
     }
   }
 
@@ -687,22 +687,22 @@ void loop() {
   // Let the left top Func input (Func 1) change the left most
   // trigger output (Trig A).
   if ((f1In > HALF_DAC_RANGE) && (prevF1 < HALF_DAC_RANGE)) {
-    rotateLeft(currentPatch.channelPattern[TRIG_D], TRIG_D);
+    rotateLeft(currentPatch, TRIG_D);
   }
   prevF1 = f1In;
 
   if ((f2In > HALF_DAC_RANGE) && (prevF2 < HALF_DAC_RANGE)) {
-    rotateLeft(currentPatch.channelPattern[TRIG_C], TRIG_C);
+    rotateLeft(currentPatch, TRIG_C);
   }
   prevF2 = f2In;
 
   if ((f3In > HALF_DAC_RANGE) && (prevF3 < HALF_DAC_RANGE)) {
-      rotateLeft(currentPatch.channelPattern[TRIG_B], TRIG_B);
+      rotateLeft(currentPatch, TRIG_B);
   }
   prevF3 = f3In;
 
   if ((f4In > HALF_DAC_RANGE) && (prevF4 < HALF_DAC_RANGE)) {
-    rotateLeft(currentPatch.channelPattern[TRIG_A], TRIG_A);
+    rotateLeft(currentPatch, TRIG_A);
   }
   prevF4 = f4In;
 
@@ -778,11 +778,11 @@ void loop() {
     case ROTATE_MODE: // Mode 3 - Rotate the Euclidean Rhythm of the active pattern.
       if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
         oldPosition = newPosition;               // The current encoder position will be the old position next loop.
-        rotateRight(currentPatch.channelPattern[selectedTriggerChannel], selectedTriggerChannel);
+        rotateRight(currentPatch, selectedTriggerChannel);
       } else if (newPosition < oldPosition - 3){ // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
         oldPosition = newPosition;               // The current encoder position will be the old position next loop.
         // Rotate the active pattern one bit to the left (clockwise).
-        rotateLeft(currentPatch.channelPattern[selectedTriggerChannel], selectedTriggerChannel);
+        rotateLeft(currentPatch, selectedTriggerChannel);
       }
       break;
     case PROGRAM_MODE: // Mode 4 - Store all patterns to eprom and store the current patchnumber / recall all patterns
@@ -802,37 +802,27 @@ void loop() {
         }
       }  
       switch (programButtonName) { 
-        case TRIG_A: // and if Button-A is pressed, then copy the stored pattern from EEPROM and put it in the current pattern.
+        case TRIG_A: // If Button-A is pressed, then copy the stored pattern from EEPROM and put it in the current pattern.
           if (prevProgramButtonValue == 0) {
             prevProgramButtonValue = 1;            
             chosenPatchNumber = candidatePatchNumber;
-            #ifdef DEBUG
-              sprintf(tmp, "reading patchNumber: %d", candidatePatchNumber);
-              Serial.println(tmp);
-            #endif
             copyPatch(patches[chosenPatchNumber], currentPatch);
-            // The counts may have changed, so we want to sync the chosen patterns.
+            // The pattern lengths may have changed, so we want to sync the chosen patterns and restart their step counters.
             // Therefor, we initialize the step count for each trigger channel.
             for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
               step[triggerChannel] = 0;
             }
             // Write the current patch number to EEPROM.
-            writePatchNumberToMemory(chosenPatchNumber);
-            #ifdef SIGNAL_PROGRAMMING            
-              colorWipe(pixels.Color(0, 0, 5), 10); // Blue
-            #endif
+            writePatchNumberToEEPROM(chosenPatchNumber);
             displayPatch(chosenPatchNumber);
           }
           break;
-        case TRIG_B: // Wipe the memory cell chosen. Note, this does not affect the current patch.
+        case TRIG_B: // Wipe the memory cell chosen clean. Note, this does not affect the current patch.
           if (prevProgramButtonValue == 0) {
             prevProgramButtonValue = 1;
             memoryCellsInUse = memoryCellsInUse & ~(1 << candidatePatchNumber);            
             copyPatch(emptyPatch, patches[candidatePatchNumber]);
-            writePatchToMemory(emptyPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
-            #ifdef SIGNAL_PROGRAMMING                        
-              colorWipe(pixels.Color(5, 5, 0), 10); // Yellow
-            #endif
+            writePatchToEEPROM(emptyPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
           }
           break;
         case TRIG_D: // If Button-D is pressed, then write the current patch to the EEPROM at the chosen patch location.
@@ -840,15 +830,10 @@ void loop() {
             prevProgramButtonValue = 1;            
             memoryCellsInUse = memoryCellsInUse | (1 << candidatePatchNumber);
             // Write chosen patch to candidate location in EEPROM.
-            #ifdef DEBUG
-              sprintf(tmp, "writing to %d", candidatePatchNumber);
-              Serial.println(tmp);            
-              displayPatch(currentPatch);              
-            #endif
-            writePatchToMemory(currentPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
-            #ifdef SIGNAL_PROGRAMMING                        
-              colorWipe(pixels.Color(0, 5, 0), 10); // Green
-            #endif            
+            writePatchToEEPROM(currentPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
+            // Either read the memory cell back to sync patches (slow because of EEPROM) OR copy the patch directly (fast because of in memory copy).
+            //readPatchFromEEPROM(patches, candidatePatchNumber);
+            copyPatch(currentPatch, patches[candidatePatchNumber]);
           }
           break; 
       }
@@ -861,7 +846,7 @@ void loop() {
   } else {
     // Display the active pattern.
     showBitPattern(selectedTriggerChannel, currentPatch.channelPattern[selectedTriggerChannel], 
-                   currentPatch.patternLength[selectedTriggerChannel], selectedTriggerChannel, mode);
+                   currentPatch.patternLength[selectedTriggerChannel], mode);
   }
 
   if (digitalRead(CLK_PIN) == true) {             // If we're using an external clock pulse.
@@ -891,7 +876,7 @@ void loop() {
     prevTime = thisTime;                          // The current time will be the previous time in the next loop.
     for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
       step[triggerChannel]++;               // Increment the step counter.
-      if (step[triggerChannel] > patches[chosenPatchNumber].patternLength[triggerChannel] - 1) {
+      if (step[triggerChannel] > currentPatch.patternLength[triggerChannel] - 1) {
         step[triggerChannel] = 0; // Reset the step counter if we've gone through all the beats for this trigger channel.
       }
     }
