@@ -122,6 +122,12 @@ Encoder myEnc(3, 4);              // Attach rotary encoder to digital pins 3 and
 #define TRIG_C 1
 #define TRIG_D 0
 
+#define MAX_ADC_VALUE 1000 // This number was determined empirically.
+
+#define CHECK_BIT(var, pos) ((var) & (1 << (pos)))
+
+char CHANNEL_NAMES[4] = {'D', 'C', 'B', 'A'};
+
 #ifdef DEBUG
   char tmp[255];
 #endif
@@ -134,10 +140,10 @@ struct Patch {
 };
 
 Patch emptyPatch;
-Patch currentPatch; // The patch the sequencer is playing.
+Patch currentPatch;               // The patch the sequencer is playing.
 
 Patch patches[NR_OF_MEMORY_CELLS];
-unsigned int delayTime  = 125;   // The time between steps persists in each loop.
+unsigned int delayTime  = 125;    // The time between steps persists in each loop.
 unsigned int memoryCellsInUse = 0;
 int chosenPatchNumber = 0;
 int candidatePatchNumber = 0;
@@ -146,18 +152,27 @@ int selectedTriggerChannel = -1;
 Adafruit_NeoPixel pixels(NUM_NEOP_LEDS, PIXEL_PIN, NEO_GRB + NEO_KHZ800); // Set up the NeoPixel ring
 
 // Fill the dots one after the other with a color.
-void colorWipe(uint32_t c, uint8_t wait) {
-  for (uint16_t i = 0; i < pixels.numPixels(); i++) {
-    pixels.setPixelColor(i, c);
-    pixels.show();
-    delay(wait);
+void colorWipe(uint32_t c, uint8_t wait, int direction = 0) {
+  if (direction == 0) {
+    for (uint16_t i = 0; i < pixels.numPixels(); i++) {
+      pixels.setPixelColor(i, c);
+      pixels.show();
+      delay(wait);
+    } 
+  } else {
+    for (uint16_t i = pixels.numPixels()-1; i > 0; i--) {
+      pixels.setPixelColor(i, c);
+      pixels.show();
+      delay(wait);
+    }
   }
 }
 
 // The Euclid function returns an unsigned integer whose bits reflect a Euclidean rhythm of
-// "pulses" spread across "patternLength[]."  There are several ways to implement this, but I
-// adapted the algorithm described at:
+// "pulses" spread across "patternLength[]."  There are several ways to implement this, but 
+// here an adapted version of algorithm described at:
 // https://www.computermusicdesign.com/simplest-euclidean-rhythm-algorithm-explained/
+// is used.
 
 unsigned int euclid(Patch thisPatch, int channelNumber) {
   int bucket = 0;
@@ -200,22 +215,20 @@ void rotateRight(Patch &thisPatch, int channelNumber) {
 // enough to accommodate resistor variation, but if a button doesn't switch to the trigger as expected
 // you should Serial.println(Buttons) and adjust the ranges as needed for your circuit.
 
-#define MAX 1000 // This number was determined empirically.
-
 int checkProgramButtons(int &selectedProgramButtonName) {
-  // Note selectedProgramButtonName will only change if a button is pressed.
+  // Note: the selectedProgramButtonName will only change if a button is pressed.
   // Read the voltage divider output.
   int buttonValue = analogRead(BUTTON_PIN); 
-  //  Determine whether button A or D was pressed.
-  if ((buttonValue > 0.40 * MAX) && (buttonValue < 0.60 * MAX)) { 
+  //  Determine whether button A, B or D was pressed.
+  if ((buttonValue > 0.40 * MAX_ADC_VALUE) && (buttonValue < 0.60 * MAX_ADC_VALUE)) { 
     selectedProgramButtonName = TRIG_D; // Button D is pressed.
     return 1;
   }
-  if ((buttonValue > 0.75 * MAX) && (buttonValue < 0.84 * MAX)) {
+  if ((buttonValue > 0.75 * MAX_ADC_VALUE) && (buttonValue < 0.84 * MAX_ADC_VALUE)) {
     selectedProgramButtonName = TRIG_B; // Button B is pressed.
     return 1;
   }
-  if (buttonValue > 0.85 * MAX) { 
+  if (buttonValue > 0.85 * MAX_ADC_VALUE) { 
     selectedProgramButtonName = TRIG_A; // Button A is pressed.
     return 1;
   }
@@ -224,11 +237,11 @@ int checkProgramButtons(int &selectedProgramButtonName) {
 }
 
 bool checkButtons(int &selectedChannel, int escapeButton) {
-  // Note selectedChannel will only change if a button is pressed.
+  // Note: the selectedChannel will only change if a button is pressed.
   static int previousSelectedChannel = -1;
   static bool change = false;
 
-  // if no button was pressed, return the input parameter unchanged.
+  // If no button was pressed, return the input parameter unchanged.
   // Pattern/trigger D will be shown in red.
   // Pattern/trigger C will be shown in green.
   // Pattern/trigger B will be shown in blue.
@@ -236,12 +249,11 @@ bool checkButtons(int &selectedChannel, int escapeButton) {
 
   int buttonValue = analogRead(BUTTON_PIN); 
   // Read the voltage divider output and only change the selectedChannel if escapeButton is not pressed.
-  if (escapeButton == 0) {
-        
-    if ((buttonValue > 0.40 * MAX) && (buttonValue < 0.60 * MAX)) selectedChannel = TRIG_D; // Select pattern/trigger D if the first button is pressed
-    if ((buttonValue > 0.64 * MAX) && (buttonValue < 0.73 * MAX)) selectedChannel = TRIG_C; // Select pattern/trigger C if the second button is pressed
-    if ((buttonValue > 0.75 * MAX) && (buttonValue < 0.84 * MAX)) selectedChannel = TRIG_B; // Select pattern/trigger B if the third button is pressed
-    if (buttonValue > 0.85 * MAX) selectedChannel = TRIG_A;   // Select pattern/trigger A if the last button is pressed
+  if (escapeButton == 0) {       
+    if ((buttonValue > 0.40 * MAX_ADC_VALUE) && (buttonValue < 0.60 * MAX_ADC_VALUE)) selectedChannel = TRIG_D; // Select pattern/trigger D if the first button is pressed
+    if ((buttonValue > 0.64 * MAX_ADC_VALUE) && (buttonValue < 0.73 * MAX_ADC_VALUE)) selectedChannel = TRIG_C; // Select pattern/trigger C if the second button is pressed
+    if ((buttonValue > 0.75 * MAX_ADC_VALUE) && (buttonValue < 0.84 * MAX_ADC_VALUE)) selectedChannel = TRIG_B; // Select pattern/trigger B if the third button is pressed
+    if (buttonValue > 0.85 * MAX_ADC_VALUE) selectedChannel = TRIG_A;   // Select pattern/trigger A if the last button is pressed
     if (previousSelectedChannel != selectedChannel) {
       previousSelectedChannel = selectedChannel;
       change = true;
@@ -260,8 +272,6 @@ void ClearNeoPixelPattern() {
   }
   pixels.show();                                    // Update the pixels displayed on the ring.
 }
-
-#define CHECK_BIT(var, pos) ((var) & (1 << (pos)))
 
 void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
   // Show whether there are patches stored in the 16 memory cells or not.
@@ -288,11 +298,11 @@ void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
   pixels.show();  // Update the pixels displayed on the NeoPixel ring.
 }
 
-void cursorColor(int mode, int &R, int &G, int &B) {
+void getCursorColor(int mode, int &R, int &G, int &B) {
   switch (mode) { 
-    case PATTERN_LENGTH_MODE: R = 10; G = 10; B = 10; break; // Use the mode to determine the color.
-    case NUM_PULSE_MODE:      R = 10; G =  0; B = 10; break; // White = Length and Tempo (with tap pressed)
-    case ROTATE_MODE:         R =  5; G =  5; B =  0; break; // Violet = Pulses, Yellow = Rotation      
+    case PATTERN_LENGTH_MODE: R = 5; G = 5; B = 5; break; // Use the mode to determine the color.
+    case NUM_PULSE_MODE:      R = 5; G = 0; B = 5; break; // White = Length and Tempo (with tap pressed)
+    case ROTATE_MODE:         R = 2; G = 2; B = 0; break; // Violet = Pulses, Yellow = Rotation      
   }  
 }
 
@@ -305,8 +315,9 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
   int G = 0;
   int B = 0;
 
-  // Use the cursor colors to highlight the beginning and end of the pattern.
-  cursorColor(mode, R, G, B);
+  // Get the cursor colors to denote the beginning and end of the pattern.
+  // We use low intensity here, to contrast with the actual pattern.
+  getCursorColor(mode, R, G, B);
   // Show the pattern length by highlighting the 1st and last led.
   // Choose the color of the 'mode' for this. This makes it easier to see in 
   // what mode the sequencer is.
@@ -314,10 +325,10 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
   pixels.setPixelColor(currentPatch.patternLength[channelNumber] - 1, pixels.Color(R, G, B)); 
   
   switch (channelNumber) {
-    case 0: R = 20; G = 0;  B = 0;  break;  // Pattern/trigger 1 will be shown in red.
-    case 1: R = 0;  G = 20; B = 0;  break;  // Pattern/trigger 2 will be shown in green.
-    case 2: R = 0;  G = 0;  B = 20; break;  // Pattern/trigger 3 will be shown in blue.
-    case 3: R = 20; G = 20; B = 0;  break;  // Pattern/trigger 4 will be shown in yellow.
+    case 0: R = 30; G =  0; B =  0; break;  // Pattern/trigger 1 will be shown in red.
+    case 1: R =  0; G = 30; B =  0; break;  // Pattern/trigger 2 will be shown in green.
+    case 2: R =  0; G =  0; B = 30; break;  // Pattern/trigger 3 will be shown in blue.
+    case 3: R = 30; G = 30; B =  0; break;  // Pattern/trigger 4 will be shown in yellow.
   }
   for (int i = 0; i < patternLength; i++) {  // step through each pixel in the ring
     // If the i-th bit is set, then set that pixel to the appropriate color.
@@ -444,14 +455,14 @@ int readPatchesFromEEPROM(Patch patches[], unsigned int &memoryCellsInUse, unsig
   // Read the patch number.
   // Read which memory cells are in use.
   // Read the delay time which determines the speed of the sequencer.
-  // Read the current patch info:
-  // - pulses
-  // - channelPattern
-  // - patternLength
+  // Read all 16 patches. Each patch contains:
+  // - 4 pulse counts
+  // - 4 channel patterns
+  // - 4 pattern lengths
   int address = EEPROM_BASE_ADDRESS;
+  int chosenPatchNumber = 0;
   EEPROM.get(address, selectedTriggerChannel);
   address += sizeof(int);
-  int chosenPatchNumber = 0;
   EEPROM.get(address, chosenPatchNumber);
   address += sizeof(int);
   EEPROM.get(address, memoryCellsInUse);
@@ -464,6 +475,7 @@ int readPatchesFromEEPROM(Patch patches[], unsigned int &memoryCellsInUse, unsig
       EEPROM.get(address, patches[i]);
       address += sizeof(Patch);
     } else {
+      // If a cell is not in use, create and load an empty patch.
       createEmptyPatch(patches[i]);
     }
   }
@@ -494,22 +506,22 @@ void readPatchFromEEPROM(Patch patches[], int chosenPatchNumber) {
   }
 }
 
-void testAllLeds() {
+void testAllLeds(int delayTime) {
   int LEDS[] = { TRIG_A_PIN, TRIG_B_PIN, TRIG_C_PIN, TRIG_D_PIN, F1_PIN, F2_PIN, F3_PIN, F4_PIN, SEQ_CLOCK_OUT_PIN };
   for (int j = 0; j < 10; j++) {
     for (int i = 0; i < 9; i++) {
       digitalWrite(LEDS[i], ON);
-      delay(5);
+      delay(delayTime);
       digitalWrite(LEDS[i], OFF);
-      delay(5);
+      delay(delayTime);
     }
   }
 }
 
 void testNeoPixel() {
   colorWipe(pixels.Color(5, 0, 0), 25); // Red
-  colorWipe(pixels.Color(0, 5, 0), 25); // Green
-  colorWipe(pixels.Color(0, 0, 5), 25); // Blue
+  colorWipe(pixels.Color(0, 5, 0), 20, 1); // Green
+  colorWipe(pixels.Color(0, 0, 5), 15); // Blue
 }
 
 void initializePatchInEeprom() {
@@ -573,6 +585,13 @@ void initializePatchInEeprom() {
   }
   writePatchesToEEPROM(patches, memoryCellsInUse, initialPatchNr, delayTime, selectedTriggerChannel);
 }
+
+void testLedsAndPixels() {
+  testAllLeds(10);            // Show that leds are working.
+  testNeoPixel();             // Show that neopixels are working.
+  pixels.clear();             // And clear it
+  testAllLeds(5);
+}
  
 void setup() {
   // Set up the serial console for debugging messages
@@ -599,15 +618,22 @@ void setup() {
   pinMode(RESET_PIN, INPUT);           // Assign the external reset input.
   pixels.begin();                      // Start the NeoPixel
   pixels.clear();
-  testNeoPixel();
-  pixels.clear();                      // And clear it
-  // Read stored patches from EEPROM into 'patches'.
+  testLedsAndPixels();                 // Show that leds and pixels are working.
+  // Read all 16 stored (empty or not) patches from EEPROM.
   chosenPatchNumber = readPatchesFromEEPROM(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
   candidatePatchNumber = chosenPatchNumber;
-  sprintf(tmp, "Read from EEPROM chosenPatchNumber: %d", chosenPatchNumber);
-  Serial.println(tmp);
   // Load the current patch with the stored information.
+  sprintf(tmp, "Reading patch info from EEPROM.");
+  Serial.println(tmp);
+  sprintf(tmp, "Restoring patch: %d", chosenPatchNumber);
+  Serial.println(tmp);
   copyPatch(patches[chosenPatchNumber], currentPatch);
+  displayPatch(currentPatch);
+  sprintf(tmp, "Setting speed to: %d", delayTime);
+  Serial.println(tmp);
+  sprintf(tmp, "Selecting channel: %c", CHANNEL_NAMES[selectedTriggerChannel]);
+  Serial.println(tmp);
+
 #endif  
   // Initialize step count for each trigger channel.
   for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
@@ -725,8 +751,8 @@ void loop() {
         // Increase/decrease the speed of the clock
         if (newPosition < oldPosition - 3) {
           delayTime -= 1;
-          if (delayTime  < 10) delayTime  = 10;      // Limit the fastest loop time to 10 msec per step, which is crazy fast.
-          oldPosition = newPosition;           // The current encoder position will be the old position next loop.
+          if (delayTime  < 10) delayTime  = 10;  // Limit the fastest loop time to 10 per step, which is crazy fast.
+          oldPosition = newPosition;             // The current encoder position will be the old position next loop.
         } else if (newPosition > oldPosition + 3) {
           delayTime  += 1;        // The internal time delayTime  is proportional to the encoder position.
           if (delayTime  > MAX_DELAY_TIME) delayTime  = MAX_DELAY_TIME;  // Limit the slowest loop time to 1 sec per step.
@@ -851,7 +877,7 @@ void loop() {
 
   if (digitalRead(CLK_PIN) == true) {             // If we're using an external clock pulse.
     if ((extClkV > 512) && (prevExtClk < 128)) {  // Check to see if the pulse just went high.
-      delayTime = thisTime - prevTime;            // If so, then capture the msec delayTime  associated with the external pulse.
+      delayTime = thisTime - prevTime;            // If so, then capture the msec delayTime associated with the external pulse.
       triggered = true;                           // Note that we've just triggered a new step in the sequence.
     }
     prevExtClk = extClkV;                         // The current external clock input will be the previous input for the next loop.
@@ -881,10 +907,11 @@ void loop() {
       }
     }
     // Show a cursor by lighting up each pixel and using color to show what mode we are in.
-    cursorColor(mode, R, G, B);
-    // Show a cursor by lighting up each pixel and using color to show what mode we are in.
-    pixels.setPixelColor(step[selectedTriggerChannel], pixels.Color(4 * R, 4 * G, 4 * B)); // Light up the current step pixel with a color to indicate the current mode.
-    pixels.show();                                // Display the step/mode pixel.
+    getCursorColor(mode, R, G, B);
+    // Light up the current step pixel with a color to indicate the current mode.
+    pixels.setPixelColor(step[selectedTriggerChannel], pixels.Color(4 * R, 4 * G, 4 * B));   
+    // Show/refresh all pixels.
+    pixels.show(); 
 
     // Turn on trigger output + LED A..D if the current step is in the Euclidean Rhythm.
     if (currentPatch.channelPattern[TRIG_A] & (1 << step[TRIG_A])) digitalWrite(TRIG_A_PIN, LOW);
