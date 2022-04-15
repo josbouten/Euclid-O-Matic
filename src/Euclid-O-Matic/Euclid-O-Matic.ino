@@ -56,6 +56,12 @@
 
 //#define INITIALIZE 1
 
+// Use the switches below to make the brightness of the neopixel oscillate.
+
+#define LED_FX 1 // Oscillate LEDs in all modes except PROGRAM_MODE.
+//#define LED_FX_BLACK 1 // When set the intensity will fall back to 0, otherwise to 1.
+//#define PATCH_MEMORY_LED_FX 1 // Oscillate LEDs in PROGRAM_MODE
+
 #include <Adafruit_NeoPixel.h>    // Include Adafruit_NeoPixel library
 #include <Encoder.h>              // Include rotary encoder library
 #include <EEPROM.h>
@@ -176,7 +182,7 @@ void colorWipe(uint32_t c, uint8_t wait, int direction = 0) {
 
 unsigned int euclid(Patch thisPatch, int channelNumber) {
   int bucket = 0;
-  unsigned int number = 0;                                 // Number is the number of pulses that have been allocated so far.
+  unsigned int number = 0;                                           // Number is the number of pulses that have been allocated so far.
   for (int i = 0; i < thisPatch.patternLength[channelNumber]; i++) { // Cycle through all of the possible steps in the sequence.
     bucket = bucket + thisPatch.pulses[channelNumber];               // Fill a "bucket" with the number of pulses to be allocated.
     if (bucket >= thisPatch.patternLength[channelNumber]) {          // If the bucket exceeds the maximum number of steps then "empty
@@ -194,8 +200,8 @@ unsigned int euclid(Patch thisPatch, int channelNumber) {
 void rotateLeft(Patch &thisPatch, int channelNumber) {
   int DROPPED_MSB;                        // Need to keep track of any bits dropped off the left
   DROPPED_MSB = (thisPatch.channelPattern[channelNumber] >> (thisPatch.patternLength[channelNumber] - 1)) & 1; // aka the old most significant bit
-  thisPatch.channelPattern[channelNumber] = (thisPatch.channelPattern[channelNumber] << 1) | DROPPED_MSB; // Shift all the bits in Pattern to the left by 1 and
-                                          // add back in the new least significant bit if needed
+  // Shift all the bits in Pattern to the left by 1 and add back in the new least significant bit if needed.
+  thisPatch.channelPattern[channelNumber] = (thisPatch.channelPattern[channelNumber] << 1) | DROPPED_MSB; 
 }
 
 // The rotateRight function shifts the bits in an unsigned integer by one place. Any bit that falls
@@ -209,7 +215,7 @@ void rotateRight(Patch &thisPatch, int channelNumber) {
   thisPatch.channelPattern[channelNumber] = thisPatch.channelPattern[channelNumber] | (DROPPED_LSB << (thisPatch.patternLength[channelNumber] - 1)); // Tack the old LSB onto the new MSB if needed
 }
 
-// checkButtons decodes the voltage values from the button voltage divider circuit. The values here
+// checkButtons and checkProgramButtons decode the voltage values from the button voltage divider circuit. The values here
 // assume that 1k, 2.2k, 4.7k and 10k resistors are switched in line with a 5V source and dropped
 // across a 10k resistor before going into the analog input channel. The ranges should be big
 // enough to accommodate resistor variation, but if a button doesn't switch to the trigger as expected
@@ -264,38 +270,12 @@ bool checkButtons(int &selectedChannel, int escapeButton) {
   return change;
 }
 
-
 void ClearNeoPixelPattern() {
   // Erases all lights on the NeoPixel in preparation for an updated pattern to be displayed.
   for (int i = 0; i < NUM_NEOP_LEDS; i++) {         // Step through each pixel in the ring and
     pixels.setPixelColor(i, pixels.Color(0, 0, 0)); // turn each pixel off.
   }
   pixels.show();                                    // Update the pixels displayed on the ring.
-}
-
-void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
-  // Show whether there are patches stored in the 16 memory cells or not.
-  // Red = memory cell is in use.
-  // Green = memory cell is empty.
-  int R = 0;
-  int G = 0;
-  int B = 0;
-  for (int i = 0; i < NR_OF_MEMORY_CELLS; i++) { // Step through each pixel in the ring.
-    int cellIsInUse = (CHECK_BIT(memoryCellsInUse, i) > 0);
-    if (cellIsInUse && (i == selectedPatch)) {
-      R = 20; G = 0; B = 0;
-    } else if (i == selectedPatch) { 
-      // Show position of rotary encoder is on current Patch.
-      R = 0; G = 15; B = 0;
-    } else if (cellIsInUse) {
-      R = 1; G = 0; B = 0;
-    } else {
-      // Show position of rotary encoder when in other positions.
-      R = 0; G = 1; B = 0;
-    }
-    pixels.setPixelColor(i, pixels.Color(R, G, B));
-  }
-  pixels.show();  // Update the pixels displayed on the NeoPixel ring.
 }
 
 void getCursorColor(int mode, int &R, int &G, int &B) {
@@ -306,11 +286,59 @@ void getCursorColor(int mode, int &R, int &G, int &B) {
   }  
 }
 
+void updateCnt(float &cnt, float &delta, float minDelta) {
+  // This function calculates the amplitude value of the oscillation 
+  // used to modulate the brightness of the NeoPixels.
+  #ifdef LED_FX
+    cnt += delta;
+    if (cnt > 30) delta = -delta;
+    #ifdef LED_FX_BLACK
+      if (cnt < 0) delta = -delta;
+    #else
+      if (cnt < minDelta) delta = -delta;
+    #endif
+  #endif
+}
+
+void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
+  // Show whether there are patches stored in the 16 memory cells or not.
+  // Red = memory cell is in use.
+  // Green = memory cell is empty.
+  int R = 0;
+  int G = 0;
+  int B = 0;
+  const float DELTA = 0.04F;
+  static float delta = DELTA;
+  static float cnt = 1.0;
+  for (int i = 0; i < NR_OF_MEMORY_CELLS; i++) { // Step through each pixel in the ring.
+    int cellIsInUse = (CHECK_BIT(memoryCellsInUse, i) > 0);
+    if (cellIsInUse && (i == selectedPatch)) {
+      R = (int) (15.0 * cnt); G = 0; B = 0;
+    } else if (i == selectedPatch) { 
+      // Show position of rotary encoder is on current Patch.
+      R = 0; G = (int) (15.0 * cnt); B = 0;
+    } else if (cellIsInUse) {
+      R = 1; G = 0; B = 0;
+    } else {
+      // Show position of rotary encoder when in other positions.
+      R = 0; G = 1; B = 0;
+    }
+    pixels.setPixelColor(i, pixels.Color(R, G, B));
+  }
+  pixels.show();  // Update the pixels displayed on the NeoPixel ring.
+  #ifdef PATCH_MEMORY_LED_FX
+    updateCnt(cnt, delta, DELTA);
+  #endif
+}
+
 void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, int mode) {
   // showBitPattern displays a Euclidean pattern associated with the bits set in Pattern. The color of the
   // pattern is dictated by channel number "channelNumber". You can change the ring colors to match the buttonValue
   // and output LEDs you use in your build here.
    
+  const float DELTA = 0.05;
+  static float delta = DELTA;
+  static float cnt = 30.0;
   int R = 0;
   int G = 0;
   int B = 0;
@@ -325,10 +353,10 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
   pixels.setPixelColor(currentPatch.patternLength[channelNumber] - 1, pixels.Color(R, G, B)); 
   
   switch (channelNumber) {
-    case 0: R = 30; G =  0; B =  0; break;  // Pattern/trigger 1 will be shown in red.
-    case 1: R =  0; G = 30; B =  0; break;  // Pattern/trigger 2 will be shown in green.
-    case 2: R =  0; G =  0; B = 30; break;  // Pattern/trigger 3 will be shown in blue.
-    case 3: R = 30; G = 30; B =  0; break;  // Pattern/trigger 4 will be shown in yellow.
+    case 0: R = (int) cnt; G =  0; B =  0; break;  // Pattern/trigger 1 will be shown in red.
+    case 1: R =  0; G = (int) cnt; B =  0; break;  // Pattern/trigger 2 will be shown in green.
+    case 2: R =  0; G =  0; B = (int) cnt; break;  // Pattern/trigger 3 will be shown in blue.
+    case 3: R = (int) cnt; G = (int) cnt; B =  0; break;  // Pattern/trigger 4 will be shown in yellow.
   }
   for (int i = 0; i < patternLength; i++) {  // step through each pixel in the ring
     // If the i-th bit is set, then set that pixel to the appropriate color.
@@ -337,6 +365,7 @@ void showBitPattern(int channelNumber, unsigned int pattern, int patternLength, 
     }
   }
   pixels.show(); // Update the pixels displayed on the NeoPixel led-ring.
+  updateCnt(cnt, delta, 1);
 }
 
 void writePatchesToEEPROM(Patch patches[], unsigned int memoryCellsInUse, int patchNumber, int delayTime, int selectedTriggerChannel) {
@@ -417,6 +446,7 @@ void createEmptyPatch(Patch &dstPatch) {
 }
 
 void displayPatch(int patchNumber) {
+  // For debug purposes.
   char tmp[255];
   sprintf(tmp, "patchNumber: %d", patchNumber);
   Serial.println(tmp);
@@ -435,6 +465,7 @@ void displayPatch(int patchNumber) {
 }
 
 void displayPatch(Patch thisPatch) {
+  // For debug purposes.
   char tmp[255];
   for (int j = 0; j < 4; j++) {
     sprintf(tmp, "pulses[%d] = %d", j, thisPatch.pulses[j]);
@@ -897,7 +928,7 @@ void loop() {
     digitalWrite(SEQ_CLOCK_OUT_PIN, HIGH);
   }
 
-  // For each trigger channel we keep track of a separate step.
+  // For each trigger channel we keep track of at which step we area separate step.
   if (triggered) {                                // If we're triggering a new step in the sequence.
     prevTime = thisTime;                          // The current time will be the previous time in the next loop.
     for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
