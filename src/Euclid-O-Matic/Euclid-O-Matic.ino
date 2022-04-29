@@ -63,7 +63,7 @@
 
 #define LED_FX 1 // Oscillate LEDs in all modes except PROGRAM_MODE.
 //#define LED_FX_BLACK 1 // When set the intensity will fall back to 0, otherwise to 1.
-//#define PATCH_MEMORY_LED_FX 1 // Oscillate LEDs in PROGRAM_MODE
+//#define PATCH_MEMORY_LED_FX 1 // Also oscillate LED intensity in PROGRAM_MODE
 
 #include <Adafruit_NeoPixel.h>    // Include Adafruit_NeoPixel library
 #include <Encoder.h>              // Include rotary encoder library
@@ -310,9 +310,11 @@ void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
   int R = 0;
   int G = 0;
   int B = 0;
-  
-  const float DELTA = 0.04F;
-  static float delta = DELTA;
+
+  #ifdef PATCH_MEMORY_LED_FX  
+    const float DELTA = 0.04F;
+    static float delta = DELTA;
+  #endif
   static float cnt = 1.0;
   for (int i = 0; i < NR_OF_MEMORY_CELLS; i++) { // Step through each pixel in the ring.
     int cellIsInUse = (CHECK_BIT(memoryCellsInUse, i) > 0);
