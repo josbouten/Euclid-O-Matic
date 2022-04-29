@@ -7,9 +7,9 @@
    *   Date:         11/21/2021                                 
    *                                                            
    *   Adapted by Jos Bouten, Jan ... Apr 2022              
-   *   Added support for tempo tap, clock out, 4 function inputs
+   *   Added support for shift button, clock out, 4 function inputs
    *   - Added variable pattern length                        
-   *   - To change the tempo the tap tempo button needs to be pressed while  
+   *   - To change the tempo the shift/tap tempo button needs to be pressed while   
    *     the rotary encoder is rotated.                                      
    *   - Changed all channel dependent variables into arrays.
    *   - Used capitals for constants, camel case for variables and function calls
@@ -33,16 +33,16 @@
    *  switch to the second mode, 'Num Pulse Mode'. Press it again and the mode is 'Rotate Mode'.
    *  Press again and the mode returns to 'Pattern Length / Tempo Mode'.
    *  
-   *  In 'Pattern Mode' rotating the encoder will increase or decrease the pattern length of the chosen trigger channel.
+  *  In 'Pattern Mode' rotating the encoder will increase or decrease the pattern length of the chosen trigger channel.
    *  Each time you change the length of the pattern a new fitting Euclidean pattern is generated depending on
    *  the number of pulses chosen (see below) for this pattern.
-   *  Rotaring the dial with the 'Tap Tempo' button pressed at the same time, will allow for changing 
+   *  Rotaring the dial with the tap tempo / shift button pressed at the same time, will allow for changing 
    *  tempo of the sequencer's internal clock. 
    *  In 'Num Pulse Mode' the encoder can be used to set the number of trigger pulses for the chosen trigger channel. 
    *  The pulses will follow a Euclidean pattern.
    *  In 'Rotate Mode' it is possible to shift the trigger pulse pattern accross the total length of the pattern.
    *  
-   *  Pressing 'Tap Tempo' and the rotary switch at the same time will select the 'Program Mode'.
+   *  Pressing the shift or Tap Tempo button and the rotary switch at the same time will select the 'Program Mode'.
    *  Using the rotary encoder's knob 1 of 16 memory cells can be selected.
    *  Pressing the trigger channel D button will store the current pattern of the selected trigger channel to the corresponding memory cell.
    *  Pressing the trigger channel A button will recall the patch pattern stored in the EEPROM memory cell and store it in 
@@ -96,7 +96,7 @@ Encoder myEnc(3, 4);              // Attach rotary encoder to digital pins 3 and
 #define EXT_CLK_PIN   A2          // The external clock CV is attached to analog pin A2
 #define RESET_PIN     12          // RESET_PIN CV in on D12
 // If the clock switch is set to external then the tap tempo button doubles as a function key.
-#define TAP_TEMPO_PIN 11          // Tap tempo / Function button on D11 
+#define SHIFT_PIN 11          // Tap tempo / Function button on D11 
 #define ON LOW
 #define OFF HIGH
 
@@ -105,7 +105,7 @@ Encoder myEnc(3, 4);              // Attach rotary encoder to digital pins 3 and
 #define NUM_PULSE_MODE      2
 #define ROTATE_MODE         3
 #define PROGRAM_MODE        4 // Allows to store patterns in EEPROM or to recall them. This mode can only be reached 
-                              // pressing the escape button AND the rotary encoder button.
+                              // pressing the shift button AND the rotary encoder button.
 #define MAX_MODE            3 // Note, we do not count PROGRAM_MODE here.         
 
 #define F1_PIN A7            // Function F1 in
@@ -245,7 +245,7 @@ int checkProgramButtons(int &selectedProgramButtonName) {
   return 0;
 }
 
-bool checkButtons(int &selectedChannel, int escapeButton) {
+bool checkButtons(int &selectedChannel, int shiftButton) {
   // Note: the selectedChannel will only change if a button is pressed.
   static int previousSelectedChannel = -1;
   static bool change = false;
@@ -257,8 +257,8 @@ bool checkButtons(int &selectedChannel, int escapeButton) {
   // Pattern/trigger A will be shown in yellow .
 
   int buttonValue = analogRead(BUTTON_PIN); 
-  // Read the voltage divider output and only change the selectedChannel if escapeButton is not pressed.
-  if (escapeButton == 0) {       
+  // Read the voltage divider output and only change the selectedChannel if shiftButton is not pressed.
+  if (shiftButton == 0) {       
     if ((buttonValue > 0.40 * MAX_ADC_VALUE) && (buttonValue < 0.60 * MAX_ADC_VALUE)) selectedChannel = TRIG_D; // Select pattern/trigger D if the first button is pressed
     if ((buttonValue > 0.64 * MAX_ADC_VALUE) && (buttonValue < 0.73 * MAX_ADC_VALUE)) selectedChannel = TRIG_C; // Select pattern/trigger C if the second button is pressed
     if ((buttonValue > 0.75 * MAX_ADC_VALUE) && (buttonValue < 0.84 * MAX_ADC_VALUE)) selectedChannel = TRIG_B; // Select pattern/trigger B if the third button is pressed
@@ -310,6 +310,7 @@ void showPatchMemory(int selectedPatch, unsigned int memoryCellsInUse) {
   int R = 0;
   int G = 0;
   int B = 0;
+  
   const float DELTA = 0.04F;
   static float delta = DELTA;
   static float cnt = 1.0;
@@ -654,7 +655,7 @@ void setup() {
   pinMode(F4_PIN, INPUT);              // Assign the Funct 4 input.
   pinMode(SEQ_CLOCK_OUT_PIN, OUTPUT);  // Assign the clock output
   pinMode(EXT_CLOCK_IN_PIN, INPUT);    // Assign the external clock input.
-  pinMode(TAP_TEMPO_PIN, INPUT);       // Assign the tap tempo button.
+  pinMode(SHIFT_PIN, INPUT);       // Assign the tap tempo button.
   pinMode(RESET_PIN, INPUT);           // Assign the external reset input.
   pixels.begin();                      // Start the NeoPixel
   pixels.clear();
@@ -706,8 +707,8 @@ void loop() {
   int f2In       = analogRead(F2_PIN);        // Read the Func 2 input
   int f3In       = analogRead(F3_PIN);        // Read the Func 3 input
   int f4In       = analogRead(F4_PIN);        // Read the Func 4 input
-  int resetPinIn = digitalRead(RESET_PIN);     // Read the external RESET_PIN input
-  int escapeButton = digitalRead(TAP_TEMPO_PIN);// Read the tap tempo/escape button (will be HIGH when pressed);
+  int resetPinIn = digitalRead(RESET_PIN);    // Read the external RESET_PIN input
+  int shiftButton = digitalRead(SHIFT_PIN);   // Read the shift/tap tempo button (will be HIGH when pressed);
   int programButtonName = -1;
   int programButtonValue;
   static int prevProgramButtonValue = 0;
@@ -721,7 +722,7 @@ void loop() {
       prevProgramButtonValue = 0;
     }
   } else {
-    change = checkButtons(selectedTriggerChannel, escapeButton);// Query the trigger buttons and update the active trigger if needed.
+    change = checkButtons(selectedTriggerChannel, shiftButton);// Query the trigger buttons and update the active trigger if needed.
     if (change) { // Remember the channel chosen (this will be recalled when powering up).
       writeTriggerChannelToEEPROM(selectedTriggerChannel);
     }
@@ -734,7 +735,7 @@ void loop() {
 
   if ((prog == true) && (prevProg == false)) { // If the encoder switch was just pressed, we need to switch modes.
     if (mode == 1) mode1Pos = newPosition;     // Store the current encoder position for a future return to that mode.
-    if (escapeButton) {                        // If the escape button is pressed as well, then we start the program mode.
+    if (shiftButton) {                        // If the shift button is pressed as well, then we start the program mode.
       mode = PROGRAM_MODE;
     } else {
       mode++;                                  // Cycle to the next mode.
@@ -786,7 +787,7 @@ void loop() {
 
   switch (mode) {
     case PATTERN_LENGTH_MODE: // Mode 1 - Manually adjust the pattern tempo (based on the internal clock).
-      if (escapeButton) {     // We only allow for changing the tempo IF the tap tempo button is pressed at the same
+      if (shiftButton) {     // We only allow for changing the tempo IF the tap tempo button is pressed at the same
                               // time the rotary encoder is operated (otherwise the pattern length can be changed (see below)).
         // Increase/decrease the speed of the clock
         if (newPosition < oldPosition - 3) {
