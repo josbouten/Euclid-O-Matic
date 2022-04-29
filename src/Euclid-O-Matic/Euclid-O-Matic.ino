@@ -17,6 +17,9 @@
    *   - While setting the speed, the pattern leds show a white background pattern.
    *   - Added storing, recalling and clearing of patches in EEPROM.
    *   - The channel chosen last will be recalled on startup.
+   *  2022-04-27: Whenever you change the pattern length, or change the number of Euclidean Rhythm pulses,
+   *     a new euclidean pattern is generated and this pattern is started from its starting position
+   *     for the active pattern.
    *   
    *  Compile, upload and run the code one time with the INITIALIZE flag set.
    *  This will result in the nano writing 16 patches to its EEPROM.
@@ -537,6 +540,12 @@ void readPatchFromEEPROM(Patch patches[], int chosenPatchNumber) {
   }
 }
 
+void resetSteps(int step[]) {
+  for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
+    step[triggerChannel] = 0;
+  }
+}
+
 void testAllLeds(int delayTime) {
   int LEDS[] = { TRIG_A_PIN, TRIG_B_PIN, TRIG_C_PIN, TRIG_D_PIN, F1_PIN, F2_PIN, F3_PIN, F4_PIN, SEQ_CLOCK_OUT_PIN };
   for (int j = 0; j < 10; j++) {
@@ -800,6 +809,8 @@ void loop() {
           oldPosition = newPosition;              // The current encoder position will be the old position next loop.
           // Compute a Euclidean Rhythm for the active pattern.
           currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+          // Restart all patterns
+          resetSteps(step);
         } else if (newPosition > oldPosition + 3) {      // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
           currentPatch.patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
           if (currentPatch.patternLength[selectedTriggerChannel] < 0) {
@@ -808,6 +819,8 @@ void loop() {
           oldPosition = newPosition;              // The current encoder position will be the old position next loop.
           // Compute a Euclidean Rhythm for the active pattern.
           currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+                    // Restart all patterns
+          resetSteps(step);
         }
         break;
       }
@@ -820,7 +833,9 @@ void loop() {
         }
         oldPosition = newPosition;              // The current encoder position will be the old position next loop.
         // Compute a Euclidean Rhythm for the active pattern.
-        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);                
+        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+        // Restart all patterns
+        resetSteps(step);
       } else if (newPosition > oldPosition + 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
         currentPatch.pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
         if (currentPatch.pulses[selectedTriggerChannel] < 0) {
@@ -828,9 +843,10 @@ void loop() {
         }
         oldPosition = newPosition;              // The current encoder position will be the old position next loop.
         // Compute a Euclidean Rhythm for the active pattern.
-        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);        
+        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+        // Restart all patterns
+        resetSteps(step);
       }
-
       break;
     case ROTATE_MODE: // Mode 3 - Rotate the Euclidean Rhythm of the active pattern.
       if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
