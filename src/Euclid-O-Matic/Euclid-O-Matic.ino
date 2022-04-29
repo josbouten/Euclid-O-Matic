@@ -20,6 +20,7 @@
    *  2022-04-27: Whenever you change the pattern length, or change the number of Euclidean Rhythm pulses,
    *     a new euclidean pattern is generated and this pattern is started from its starting position
    *     for the active pattern.
+   * 2022-04-29: The mode from which a jump into program mode is made is restored when leaving program mode.
    *   
    *  Compile, upload and run the code one time with the INITIALIZE flag set.
    *  This will result in the nano writing 16 patches to its EEPROM.
@@ -686,7 +687,8 @@ void setup() {
 }
 
 void loop() {
-  static int mode       = 0;              // This sequencer mode will persist in each loop.
+  static int mode       = PATTERN_LENGTH_MODE - 1;// This sequencer mode will persist in each loop.
+  static int prevMode = 0;
   static long mode1Pos  = 0;              // The last encoder position in mode 1 is stored for a future return to that mode.
   static int prevExtClk = 0;              // Store the previous External Clock Pulse value for transition checking.
   static unsigned long thisTime;          // Prepare to query the Nano's clock.
@@ -703,7 +705,7 @@ void loop() {
 
   bool triggered = false;                     // Assume that no new step is going to occur this loop.
   long newPosition = myEnc.read();            // Read the current number of encoder counts.
-  int triggerWidthPotValue = analogRead(POT_PIN);       // Read the trigger pulse width potentiometer value.
+  int triggerWidthPotValue = analogRead(POT_PIN); // Read the trigger pulse width potentiometer value.
   int extClkV    = analogRead(EXT_CLK_PIN);   // Read the external clock input.
   int f1In       = analogRead(F1_PIN);        // Read the Func 1 input, will return 0 if no signal present, else 255
   int f2In       = analogRead(F2_PIN);        // Read the Func 2 input
@@ -737,14 +739,19 @@ void loop() {
 
   if ((prog == true) && (prevProg == false)) { // If the encoder switch was just pressed, we need to switch modes.
     if (mode == 1) mode1Pos = newPosition;     // Store the current encoder position for a future return to that mode.
-    if (shiftButton) {                        // If the shift button is pressed as well, then we start the program mode.
+    if (shiftButton) {                         // If the shift button is pressed as well, then we start the program mode.
+      prevMode = mode;
       mode = PROGRAM_MODE;
     } else {
-      mode++;                                  // Cycle to the next mode.
-      if (mode > MAX_MODE) mode = 1;           // Go back to mode 0 after mode MAX_MODE.
-      if (mode == 1) {                         // Restore the encoder position when last in the current mode.
-        myEnc.write(mode1Pos);
-        newPosition = mode1Pos;
+      if (mode == PROGRAM_MODE) {
+        mode = prevMode;                       // Return to mode from which we jumped into program mode
+      } else {
+        mode++;                                // Cycle to the next mode.
+        if (mode > MAX_MODE) mode = 1;         // Go back to mode 0 after mode MAX_MODE.
+        if (mode == 1) {                       // Restore the encoder position when last in the current mode.
+          myEnc.write(mode1Pos);
+          newPosition = mode1Pos;
+        }
       }
     }
     oldPosition = newPosition;                 // The current encoder position will be the old position next loop.
@@ -789,7 +796,7 @@ void loop() {
 
   switch (mode) {
     case PATTERN_LENGTH_MODE: // Mode 1 - Manually adjust the pattern tempo (based on the internal clock).
-      if (shiftButton) {     // We only allow for changing the tempo IF the tap tempo button is pressed at the same
+      if (shiftButton) {      // We only allow for changing the tempo IF the tap tempo button is pressed at the same
                               // time the rotary encoder is operated (otherwise the pattern length can be changed (see below)).
         // Increase/decrease the speed of the clock
         if (newPosition < oldPosition - 3) {
