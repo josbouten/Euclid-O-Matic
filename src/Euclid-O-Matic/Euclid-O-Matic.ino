@@ -596,7 +596,6 @@ void initializePatchInEeprom() {
   patternLength[2] = 15;
   patternLength[3] = 12;
 
-  Serial.println(tmp);
   sprintf(tmp, "sizeof patch: %d", sizeof(patches));
   Serial.println(tmp);
   for (int j = 0; j < 4; j++) {
@@ -643,41 +642,38 @@ void setup() {
   #ifdef INITIALIZE  
     initializePatchInEeprom();
     Serial.println("Successfuly written 16 default patches to EEPROM.");
-    Serial.println("Now recompile and upload with #define INITIALIZE commented out");
-    Serial.println("to run Euclid-O-Matic (a Euclidean sequencer / rhythm generator.");
   #else
-  pinMode(PROG_PIN, INPUT_PULLUP);     // Assign the encoder switch which closes to ground and uses an internal pullup resistor.
-  pinMode(CLK_PIN, INPUT);             // Assign the external clock selector switch.
-  pinMode(TRIG_D_PIN, OUTPUT);         // Assign trigger 1 out.
-  pinMode(TRIG_C_PIN, OUTPUT);         // Assign trigger 2 out.
-  pinMode(TRIG_B_PIN, OUTPUT);         // Assign trigger 3 out.
-  pinMode(TRIG_A_PIN, OUTPUT);         // Assign trigger 4 out.
-  pinMode(F1_PIN, INPUT);              // Assign the Funct 1 input.
-  pinMode(F2_PIN, INPUT);              // Assign the Funct 2 input.
-  pinMode(F3_PIN, INPUT);              // Assign the Funct 3 input.
-  pinMode(F4_PIN, INPUT);              // Assign the Funct 4 input.
-  pinMode(SEQ_CLOCK_OUT_PIN, OUTPUT);  // Assign the clock output
-  pinMode(EXT_CLOCK_IN_PIN, INPUT);    // Assign the external clock input.
-  pinMode(SHIFT_PIN, INPUT);       // Assign the tap tempo button.
-  pinMode(RESET_PIN, INPUT);           // Assign the external reset input.
-  pixels.begin();                      // Start the NeoPixel
-  pixels.clear();
-  testLedsAndPixels();                 // Show that leds and pixels are working.
-  // Read all 16 stored (empty or not) patches from EEPROM.
-  chosenPatchNumber = readPatchesFromEEPROM(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
-  candidatePatchNumber = chosenPatchNumber;
-  // Load the current patch with the stored information.
-  sprintf(tmp, "Reading patch info from EEPROM.");
-  Serial.println(tmp);
-  sprintf(tmp, "Restoring patch: %d", chosenPatchNumber);
-  Serial.println(tmp);
-  copyPatch(patches[chosenPatchNumber], currentPatch);
-  displayPatch(currentPatch);
-  sprintf(tmp, "Setting speed to: %d", delayTime);
-  Serial.println(tmp);
-  sprintf(tmp, "Selecting channel: %c", CHANNEL_NAMES[selectedTriggerChannel]);
-  Serial.println(tmp);
-
+    pinMode(PROG_PIN, INPUT_PULLUP);     // Assign the encoder switch which closes to ground and uses an internal pullup resistor.
+    pinMode(CLK_PIN, INPUT);             // Assign the external clock selector switch.
+    pinMode(TRIG_D_PIN, OUTPUT);         // Assign trigger 1 out.
+    pinMode(TRIG_C_PIN, OUTPUT);         // Assign trigger 2 out.
+    pinMode(TRIG_B_PIN, OUTPUT);         // Assign trigger 3 out.
+    pinMode(TRIG_A_PIN, OUTPUT);         // Assign trigger 4 out.
+    pinMode(F1_PIN, INPUT);              // Assign the Funct 1 input.
+    pinMode(F2_PIN, INPUT);              // Assign the Funct 2 input.
+    pinMode(F3_PIN, INPUT);              // Assign the Funct 3 input.
+    pinMode(F4_PIN, INPUT);              // Assign the Funct 4 input.
+    pinMode(SEQ_CLOCK_OUT_PIN, OUTPUT);  // Assign the clock output
+    pinMode(EXT_CLOCK_IN_PIN, INPUT);    // Assign the external clock input.
+    pinMode(SHIFT_PIN, INPUT);       // Assign the tap tempo button.
+    pinMode(RESET_PIN, INPUT);           // Assign the external reset input.
+    pixels.begin();                      // Start the NeoPixel
+    pixels.clear();
+    testLedsAndPixels();                 // Show that leds and pixels are working.
+    // Read all 16 stored (empty or not) patches from EEPROM.
+    chosenPatchNumber = readPatchesFromEEPROM(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
+    candidatePatchNumber = chosenPatchNumber;
+    // Load the current patch with the stored information.
+    sprintf(tmp, "Reading patch info from EEPROM.");
+    Serial.println(tmp);
+    sprintf(tmp, "Restoring patch: %d", chosenPatchNumber);
+    Serial.println(tmp);
+    copyPatch(patches[chosenPatchNumber], currentPatch);
+    displayPatch(currentPatch);
+    sprintf(tmp, "Setting speed to: %d", delayTime);
+    Serial.println(tmp);
+    sprintf(tmp, "Selecting channel: %c", CHANNEL_NAMES[selectedTriggerChannel]);
+    Serial.println(tmp);
 #endif  
   // Initialize step count for each trigger channel.
   for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
@@ -686,295 +682,303 @@ void setup() {
   createEmptyPatch(emptyPatch);
 }
 
-void loop() {
-  static int mode       = PATTERN_LENGTH_MODE - 1;// This sequencer mode will persist in each loop.
-  static int prevMode = 0;
-  static long mode1Pos  = 0;              // The last encoder position in mode 1 is stored for a future return to that mode.
-  static int prevExtClk = 0;              // Store the previous External Clock Pulse value for transition checking.
-  static unsigned long thisTime;          // Prepare to query the Nano's clock.
-  static unsigned long prevTime = 0;      // Keep track of how much time elapses between loops.
-  static long oldPosition;                // Keep track of the previous encoder count.
-  static bool prevProg;                   // Keep track of the previous encoder switch state.
-  static bool prog;                       // Prepare to read the current encoder switch state.
-  static int prevF1 = 0;                  // Keep track of the value of the F1 CV input.
-  static int prevF2 = 0;                  // Keep track of the value of the F2 CV input.
-  static int prevF3 = 0;                  // Keep track of the value of the F3 CV input.
-  static int prevF4 = 0;                  // Keep track of the value of the F4 CV input.
-  static int prevResetPinIn = 0;          // Keep track of the value of the Reset in CV input.
-  int deltaResetPinIn = 0;                // Keep track of the value of the Reset in CV input.
-
-  bool triggered = false;                     // Assume that no new step is going to occur this loop.
-  long newPosition = myEnc.read();            // Read the current number of encoder counts.
-  int triggerWidthPotValue = analogRead(POT_PIN); // Read the trigger pulse width potentiometer value.
-  int extClkV    = analogRead(EXT_CLK_PIN);   // Read the external clock input.
-  int f1In       = analogRead(F1_PIN);        // Read the Func 1 input, will return 0 if no signal present, else 255
-  int f2In       = analogRead(F2_PIN);        // Read the Func 2 input
-  int f3In       = analogRead(F3_PIN);        // Read the Func 3 input
-  int f4In       = analogRead(F4_PIN);        // Read the Func 4 input
-  int resetPinIn = digitalRead(RESET_PIN);    // Read the external RESET_PIN input
-  int shiftButton = digitalRead(SHIFT_PIN);   // Read the shift/tap tempo button (will be HIGH when pressed);
-  int programButtonName = -1;
-  int programButtonValue;
-  static int prevProgramButtonValue = 0;
-  boolean change = false;
-  int R = 0, G = 0, B = 0;
-  
-
-  if (mode == PROGRAM_MODE) {
-    programButtonValue = checkProgramButtons(programButtonName); // Find out whether Trig A, B or D was pressed.
-    if (programButtonValue == 0) { // No button was pressed.
-      prevProgramButtonValue = 0;
-    }
-  } else {
-    change = checkButtons(selectedTriggerChannel, shiftButton);// Query the trigger buttons and update the active trigger if needed.
-    if (change) { // Remember the channel chosen (this will be recalled when powering up).
-      writeTriggerChannelToEEPROM(selectedTriggerChannel);
-    }
+#ifdef INITIALIZE
+  void loop() {
+    Serial.println("Now recompile and upload with #define INITIALIZE commented out");
+    Serial.println("to run Euclid-O-Matic (a Euclidean sequencer / rhythm generator.");
+    delay(5000);
   }
+#else
+  void loop() {
+    static int mode       = PATTERN_LENGTH_MODE - 1;// This sequencer mode will persist in each loop.
+    static int prevMode = 0;
+    static long mode1Pos  = 0;              // The last encoder position in mode 1 is stored for a future return to that mode.
+    static int prevExtClk = 0;              // Store the previous External Clock Pulse value for transition checking.
+    static unsigned long thisTime;          // Prepare to query the Nano's clock.
+    static unsigned long prevTime = 0;      // Keep track of how much time elapses between loops.
+    static long oldPosition;                // Keep track of the previous encoder count.
+    static bool prevProg;                   // Keep track of the previous encoder switch state.
+    static bool prog;                       // Prepare to read the current encoder switch state.
+    static int prevF1 = 0;                  // Keep track of the value of the F1 CV input.
+    static int prevF2 = 0;                  // Keep track of the value of the F2 CV input.
+    static int prevF3 = 0;                  // Keep track of the value of the F3 CV input.
+    static int prevF4 = 0;                  // Keep track of the value of the F4 CV input.
+    static int prevResetPinIn = 0;          // Keep track of the value of the Reset in CV input.
+    int deltaResetPinIn = 0;                // Keep track of the value of the Reset in CV input.
 
-  prevProg = prog;                          // Store the last encoder switch position.
-  prog     = digitalRead(PROG_PIN);         // Get the current encoder switch position.
+    bool triggered = false;                     // Assume that no new step is going to occur this loop.
+    long newPosition = myEnc.read();            // Read the current number of encoder counts.
+    int triggerWidthPotValue = analogRead(POT_PIN); // Read the trigger pulse width potentiometer value.
+    int extClkV    = analogRead(EXT_CLK_PIN);   // Read the external clock input.
+    int f1In       = analogRead(F1_PIN);        // Read the Func 1 input, will return 0 if no signal present, else 255
+    int f2In       = analogRead(F2_PIN);        // Read the Func 2 input
+    int f3In       = analogRead(F3_PIN);        // Read the Func 3 input
+    int f4In       = analogRead(F4_PIN);        // Read the Func 4 input
+    int resetPinIn = digitalRead(RESET_PIN);    // Read the external RESET_PIN input
+    int shiftButton = digitalRead(SHIFT_PIN);   // Read the shift/tap tempo button (will be HIGH when pressed);
+    int programButtonName = -1;
+    int programButtonValue;
+    static int prevProgramButtonValue = 0;
+    boolean change = false;
+    int R = 0, G = 0, B = 0;
+    
 
-  thisTime = millis();                      // Get the current Nano clock value in msec.
-
-  if ((prog == true) && (prevProg == false)) { // If the encoder switch was just pressed, we need to switch modes.
-    if (mode == 1) mode1Pos = newPosition;     // Store the current encoder position for a future return to that mode.
-    if (shiftButton) {                         // If the shift button is pressed as well, then we start the program mode.
-      prevMode = mode;
-      mode = PROGRAM_MODE;
+    if (mode == PROGRAM_MODE) {
+      programButtonValue = checkProgramButtons(programButtonName); // Find out whether Trig A, B or D was pressed.
+      if (programButtonValue == 0) { // No button was pressed.
+        prevProgramButtonValue = 0;
+      }
     } else {
-      if (mode == PROGRAM_MODE) {
-        mode = prevMode;                       // Return to mode from which we jumped into program mode
+      change = checkButtons(selectedTriggerChannel, shiftButton);// Query the trigger buttons and update the active trigger if needed.
+      if (change) { // Remember the channel chosen (this will be recalled when powering up).
+        writeTriggerChannelToEEPROM(selectedTriggerChannel);
+      }
+    }
+
+    prevProg = prog;                          // Store the last encoder switch position.
+    prog     = digitalRead(PROG_PIN);         // Get the current encoder switch position.
+
+    thisTime = millis();                      // Get the current Nano clock value in msec.
+
+    if ((prog == true) && (prevProg == false)) { // If the encoder switch was just pressed, we need to switch modes.
+      if (mode == 1) mode1Pos = newPosition;     // Store the current encoder position for a future return to that mode.
+      if (shiftButton) {                         // If the shift button is pressed as well, then we start the program mode.
+        prevMode = mode;
+        mode = PROGRAM_MODE;
       } else {
-        mode++;                                // Cycle to the next mode.
-        if (mode > MAX_MODE) mode = 1;         // Go back to mode 0 after mode MAX_MODE.
-        if (mode == 1) {                       // Restore the encoder position when last in the current mode.
-          myEnc.write(mode1Pos);
-          newPosition = mode1Pos;
+        if (mode == PROGRAM_MODE) {
+          mode = prevMode;                       // Return to mode from which we jumped into program mode
+        } else {
+          mode++;                                // Cycle to the next mode.
+          if (mode > MAX_MODE) mode = 1;         // Go back to mode 0 after mode MAX_MODE.
+          if (mode == 1) {                       // Restore the encoder position when last in the current mode.
+            myEnc.write(mode1Pos);
+            newPosition = mode1Pos;
+          }
         }
       }
+      oldPosition = newPosition;                 // The current encoder position will be the old position next loop.
     }
-    oldPosition = newPosition;                 // The current encoder position will be the old position next loop.
-  }
 
-  ClearNeoPixelPattern();                      // Clear the NeoPixel ring in preparation for any changes to the pattern.
+    ClearNeoPixelPattern();                      // Clear the NeoPixel ring in preparation for any changes to the pattern.
 
-  // Respond to function CV inputs.
-  // Let the left top Func input (Func 1) change the left most
-  // trigger output (Trig A).
-  if ((f1In > HALF_DAC_RANGE) && (prevF1 < HALF_DAC_RANGE)) {
-    rotateLeft(currentPatch, TRIG_D);
-  }
-  prevF1 = f1In;
-
-  if ((f2In > HALF_DAC_RANGE) && (prevF2 < HALF_DAC_RANGE)) {
-    rotateLeft(currentPatch, TRIG_C);
-  }
-  prevF2 = f2In;
-
-  if ((f3In > HALF_DAC_RANGE) && (prevF3 < HALF_DAC_RANGE)) {
-      rotateLeft(currentPatch, TRIG_B);
-  }
-  prevF3 = f3In;
-
-  if ((f4In > HALF_DAC_RANGE) && (prevF4 < HALF_DAC_RANGE)) {
-    rotateLeft(currentPatch, TRIG_A);
-  }
-  prevF4 = f4In;
-
-  // Reset on positive going edges of the reset pin.
-  deltaResetPinIn = resetPinIn - prevResetPinIn;
-  if (deltaResetPinIn == 1) {
-    for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
-        step[triggerChannel] = 0;
+    // Respond to function CV inputs.
+    // Let the left top Func input (Func 1) change the left most
+    // trigger output (Trig A).
+    if ((f1In > HALF_DAC_RANGE) && (prevF1 < HALF_DAC_RANGE)) {
+      rotateLeft(currentPatch, TRIG_D);
     }
-    prevResetPinIn = 1;
-  } 
-  if (deltaResetPinIn == -1) {
-    prevResetPinIn = 0;
-  }
+    prevF1 = f1In;
 
-  switch (mode) {
-    case PATTERN_LENGTH_MODE: // Mode 1 - Manually adjust the pattern tempo (based on the internal clock).
-      if (shiftButton) {      // We only allow for changing the tempo IF the tap tempo button is pressed at the same
-                              // time the rotary encoder is operated (otherwise the pattern length can be changed (see below)).
-        // Increase/decrease the speed of the clock
-        if (newPosition < oldPosition - 3) {
-          delayTime -= 1;
-          if (delayTime  < 10) delayTime  = 10;  // Limit the fastest loop time to 10 per step, which is crazy fast.
-          oldPosition = newPosition;             // The current encoder position will be the old position next loop.
-        } else if (newPosition > oldPosition + 3) {
-          delayTime  += 1;        // The internal time delayTime  is proportional to the encoder position.
-          if (delayTime  > MAX_DELAY_TIME) delayTime  = MAX_DELAY_TIME;  // Limit the slowest loop time to 1 sec per step.
-          // Change if you want slower tempos.          
-          oldPosition = newPosition;           // The current encoder position will be the old position next loop.          
-        }      
+    if ((f2In > HALF_DAC_RANGE) && (prevF2 < HALF_DAC_RANGE)) {
+      rotateLeft(currentPatch, TRIG_C);
+    }
+    prevF2 = f2In;
+
+    if ((f3In > HALF_DAC_RANGE) && (prevF3 < HALF_DAC_RANGE)) {
+        rotateLeft(currentPatch, TRIG_B);
+    }
+    prevF3 = f3In;
+
+    if ((f4In > HALF_DAC_RANGE) && (prevF4 < HALF_DAC_RANGE)) {
+      rotateLeft(currentPatch, TRIG_A);
+    }
+    prevF4 = f4In;
+
+    // Reset on positive going edges of the reset pin.
+    deltaResetPinIn = resetPinIn - prevResetPinIn;
+    if (deltaResetPinIn == 1) {
+      for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
+          step[triggerChannel] = 0;
       }
-      else { // Increase/decrease the pattern length for the active pattern.
+      prevResetPinIn = 1;
+    } 
+    if (deltaResetPinIn == -1) {
+      prevResetPinIn = 0;
+    }
+
+    switch (mode) {
+      case PATTERN_LENGTH_MODE: // Mode 1 - Manually adjust the pattern tempo (based on the internal clock).
+        if (shiftButton) {      // We only allow for changing the tempo IF the tap tempo button is pressed at the same
+                                // time the rotary encoder is operated (otherwise the pattern length can be changed (see below)).
+          // Increase/decrease the speed of the clock
+          if (newPosition < oldPosition - 3) {
+            delayTime -= 1;
+            if (delayTime  < 10) delayTime  = 10;  // Limit the fastest loop time to 10 per step, which is crazy fast.
+            oldPosition = newPosition;             // The current encoder position will be the old position next loop.
+          } else if (newPosition > oldPosition + 3) {
+            delayTime  += 1;        // The internal time delayTime  is proportional to the encoder position.
+            if (delayTime  > MAX_DELAY_TIME) delayTime  = MAX_DELAY_TIME;  // Limit the slowest loop time to 1 sec per step.
+            // Change if you want slower tempos.          
+            oldPosition = newPosition;           // The current encoder position will be the old position next loop.          
+          }      
+        }
+        else { // Increase/decrease the pattern length for the active pattern.
+          if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
+            currentPatch.patternLength[selectedTriggerChannel]++;// Increase the pattern length by 1 for the active pattern.
+            if (currentPatch.patternLength[selectedTriggerChannel] > NUM_NEOP_LEDS) {
+              currentPatch.patternLength[selectedTriggerChannel] = NUM_NEOP_LEDS;
+            }
+            oldPosition = newPosition;              // The current encoder position will be the old position next loop.
+            // Compute a Euclidean Rhythm for the active pattern.
+            currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+            // Restart all patterns
+            resetSteps(step);
+          } else if (newPosition > oldPosition + 3) {      // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+            currentPatch.patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
+            if (currentPatch.patternLength[selectedTriggerChannel] < 0) {
+              currentPatch.patternLength[selectedTriggerChannel] = 0;
+            }
+            oldPosition = newPosition;              // The current encoder position will be the old position next loop.
+            // Compute a Euclidean Rhythm for the active pattern.
+            currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+                      // Restart all patterns
+            resetSteps(step);
+          }
+          break;
+        }
+        break;
+      case NUM_PULSE_MODE: // Mode 2 - Change the number of Euclidean Rhythm pulses of the active pattern.
         if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-          currentPatch.patternLength[selectedTriggerChannel]++;// Increase the pattern length by 1 for the active pattern.
-          if (currentPatch.patternLength[selectedTriggerChannel] > NUM_NEOP_LEDS) {
-            currentPatch.patternLength[selectedTriggerChannel] = NUM_NEOP_LEDS;
+          currentPatch.pulses[selectedTriggerChannel]++;       // Increase the number of pulses in the active pattern.
+          if (currentPatch.pulses[selectedTriggerChannel] > currentPatch.patternLength[selectedTriggerChannel]) {
+            currentPatch.pulses[selectedTriggerChannel] = currentPatch.patternLength[selectedTriggerChannel];// Limit the largest number of pulses to NumSteps.
           }
           oldPosition = newPosition;              // The current encoder position will be the old position next loop.
           // Compute a Euclidean Rhythm for the active pattern.
           currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
           // Restart all patterns
           resetSteps(step);
-        } else if (newPosition > oldPosition + 3) {      // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-          currentPatch.patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
-          if (currentPatch.patternLength[selectedTriggerChannel] < 0) {
-            currentPatch.patternLength[selectedTriggerChannel] = 0;
+        } else if (newPosition > oldPosition + 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+          currentPatch.pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
+          if (currentPatch.pulses[selectedTriggerChannel] < 0) {
+            currentPatch.pulses[selectedTriggerChannel] = 0;            // Limit the smallest number of pulses to zero.
           }
           oldPosition = newPosition;              // The current encoder position will be the old position next loop.
           // Compute a Euclidean Rhythm for the active pattern.
           currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
-                    // Restart all patterns
+          // Restart all patterns
           resetSteps(step);
         }
         break;
-      }
-      break;
-    case NUM_PULSE_MODE: // Mode 2 - Change the number of Euclidean Rhythm pulses of the active pattern.
-      if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-        currentPatch.pulses[selectedTriggerChannel]++;       // Increase the number of pulses in the active pattern.
-        if (currentPatch.pulses[selectedTriggerChannel] > currentPatch.patternLength[selectedTriggerChannel]) {
-          currentPatch.pulses[selectedTriggerChannel] = currentPatch.patternLength[selectedTriggerChannel];// Limit the largest number of pulses to NumSteps.
+      case ROTATE_MODE: // Mode 3 - Rotate the Euclidean Rhythm of the active pattern.
+        if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
+          oldPosition = newPosition;               // The current encoder position will be the old position next loop.
+          rotateRight(currentPatch, selectedTriggerChannel);
+        } else if (newPosition < oldPosition - 3){ // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+          oldPosition = newPosition;               // The current encoder position will be the old position next loop.
+          // Rotate the active pattern one bit to the left (clockwise).
+          rotateLeft(currentPatch, selectedTriggerChannel);
         }
-        oldPosition = newPosition;              // The current encoder position will be the old position next loop.
-        // Compute a Euclidean Rhythm for the active pattern.
-        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
-        // Restart all patterns
-        resetSteps(step);
-      } else if (newPosition > oldPosition + 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-        currentPatch.pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
-        if (currentPatch.pulses[selectedTriggerChannel] < 0) {
-          currentPatch.pulses[selectedTriggerChannel] = 0;            // Limit the smallest number of pulses to zero.
-        }
-        oldPosition = newPosition;              // The current encoder position will be the old position next loop.
-        // Compute a Euclidean Rhythm for the active pattern.
-        currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
-        // Restart all patterns
-        resetSteps(step);
-      }
-      break;
-    case ROTATE_MODE: // Mode 3 - Rotate the Euclidean Rhythm of the active pattern.
-      if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-        oldPosition = newPosition;               // The current encoder position will be the old position next loop.
-        rotateRight(currentPatch, selectedTriggerChannel);
-      } else if (newPosition < oldPosition - 3){ // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-        oldPosition = newPosition;               // The current encoder position will be the old position next loop.
-        // Rotate the active pattern one bit to the left (clockwise).
-        rotateLeft(currentPatch, selectedTriggerChannel);
-      }
-      break;
-    case PROGRAM_MODE: // Mode 4 - Store all patterns to eprom and store the current patchnumber / recall all patterns
-      if (newPosition > oldPosition + 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-        // Rotate the active pattern one bit to the right (clockwise).
-        oldPosition = newPosition;              // The current encoder position will be the old position next loop.
-        candidatePatchNumber -= 1;
-        if (candidatePatchNumber < 0) {
-          candidatePatchNumber = NR_OF_MEMORY_CELLS - 1;
-        }
-      } else if (newPosition < oldPosition - 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-        // Rotate the active pattern one bit to the left (clockwise).
-        oldPosition = newPosition;                // The current encoder position will be the old position next loop.
-        candidatePatchNumber += 1;
-        if (candidatePatchNumber > NR_OF_MEMORY_CELLS - 1) {
-          candidatePatchNumber = 0;
-        }
-      }  
-      switch (programButtonName) { 
-        case TRIG_A: // If Button-A is pressed, then copy the stored pattern from EEPROM and put it in the current pattern.
-          if (prevProgramButtonValue == 0) {
-            prevProgramButtonValue = 1;            
-            chosenPatchNumber = candidatePatchNumber;
-            copyPatch(patches[chosenPatchNumber], currentPatch);
-            // The pattern lengths may have changed, so we want to sync the chosen patterns and restart their step counters.
-            // Therefor, we initialize the step count for each trigger channel.
-            for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
-              step[triggerChannel] = 0;
+        break;
+      case PROGRAM_MODE: // Mode 4 - Store all patterns to eprom and store the current patchnumber / recall all patterns
+        if (newPosition > oldPosition + 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
+          // Rotate the active pattern one bit to the right (clockwise).
+          oldPosition = newPosition;              // The current encoder position will be the old position next loop.
+          candidatePatchNumber -= 1;
+          if (candidatePatchNumber < 0) {
+            candidatePatchNumber = NR_OF_MEMORY_CELLS - 1;
+          }
+        } else if (newPosition < oldPosition - 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+          // Rotate the active pattern one bit to the left (clockwise).
+          oldPosition = newPosition;                // The current encoder position will be the old position next loop.
+          candidatePatchNumber += 1;
+          if (candidatePatchNumber > NR_OF_MEMORY_CELLS - 1) {
+            candidatePatchNumber = 0;
+          }
+        }  
+        switch (programButtonName) { 
+          case TRIG_A: // If Button-A is pressed, then copy the stored pattern from EEPROM and put it in the current pattern.
+            if (prevProgramButtonValue == 0) {
+              prevProgramButtonValue = 1;            
+              chosenPatchNumber = candidatePatchNumber;
+              copyPatch(patches[chosenPatchNumber], currentPatch);
+              // The pattern lengths may have changed, so we want to sync the chosen patterns and restart their step counters.
+              // Therefor, we initialize the step count for each trigger channel.
+              for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
+                step[triggerChannel] = 0;
+              }
+              // Write the current patch number to EEPROM.
+              writePatchNumberToEEPROM(chosenPatchNumber);
+              displayPatch(chosenPatchNumber);
             }
-            // Write the current patch number to EEPROM.
-            writePatchNumberToEEPROM(chosenPatchNumber);
-            displayPatch(chosenPatchNumber);
-          }
-          break;
-        case TRIG_B: // Wipe the memory cell chosen clean. Note, this does not affect the current patch.
-          if (prevProgramButtonValue == 0) {
-            prevProgramButtonValue = 1;
-            memoryCellsInUse = memoryCellsInUse & ~(1 << candidatePatchNumber);            
-            copyPatch(emptyPatch, patches[candidatePatchNumber]);
-            writePatchToEEPROM(emptyPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
-          }
-          break;
-        case TRIG_D: // If Button-D is pressed, then write the current patch to the EEPROM at the chosen patch location.
-          if (prevProgramButtonValue == 0) {
-            prevProgramButtonValue = 1;            
-            memoryCellsInUse = memoryCellsInUse | (1 << candidatePatchNumber);
-            // Write chosen patch to candidate location in EEPROM.
-            writePatchToEEPROM(currentPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
-            // Either read the memory cell back to sync patches (slow because of EEPROM) OR copy the patch directly (fast because of in memory copy).
-            //readPatchFromEEPROM(patches, candidatePatchNumber);
-            copyPatch(currentPatch, patches[candidatePatchNumber]);
-          }
-          break; 
+            break;
+          case TRIG_B: // Wipe the memory cell chosen clean. Note, this does not affect the current patch.
+            if (prevProgramButtonValue == 0) {
+              prevProgramButtonValue = 1;
+              memoryCellsInUse = memoryCellsInUse & ~(1 << candidatePatchNumber);            
+              copyPatch(emptyPatch, patches[candidatePatchNumber]);
+              writePatchToEEPROM(emptyPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
+            }
+            break;
+          case TRIG_D: // If Button-D is pressed, then write the current patch to the EEPROM at the chosen patch location.
+            if (prevProgramButtonValue == 0) {
+              prevProgramButtonValue = 1;            
+              memoryCellsInUse = memoryCellsInUse | (1 << candidatePatchNumber);
+              // Write chosen patch to candidate location in EEPROM.
+              writePatchToEEPROM(currentPatch, memoryCellsInUse, candidatePatchNumber, delayTime, selectedTriggerChannel);
+              // Either read the memory cell back to sync patches (slow because of EEPROM) OR copy the patch directly (fast because of in memory copy).
+              //readPatchFromEEPROM(patches, candidatePatchNumber);
+              copyPatch(currentPatch, patches[candidatePatchNumber]);
+            }
+            break; 
+        }
+        break;
+    } // end swith(mode)
+
+    if (mode == PROGRAM_MODE) {
+      // show selected memory location number.
+      showPatchMemory(candidatePatchNumber, memoryCellsInUse);
+    } else {
+      // Display the active pattern.
+      showBitPattern(selectedTriggerChannel, currentPatch.channelPattern[selectedTriggerChannel], 
+                    currentPatch.patternLength[selectedTriggerChannel], mode);
+    }
+
+    if (digitalRead(CLK_PIN) == true) {             // If we're using an external clock pulse.
+      if ((extClkV > 512) && (prevExtClk < 128)) {  // Check to see if the pulse just went high.
+        delayTime = thisTime - prevTime;            // If so, then capture the msec delayTime associated with the external pulse.
+        triggered = true;                           // Note that we've just triggered a new step in the sequence.
       }
-      break;
-  } // end swith(mode)
-
-  if (mode == PROGRAM_MODE) {
-    // show selected memory location number.
-    showPatchMemory(candidatePatchNumber, memoryCellsInUse);
-  } else {
-    // Display the active pattern.
-    showBitPattern(selectedTriggerChannel, currentPatch.channelPattern[selectedTriggerChannel], 
-                   currentPatch.patternLength[selectedTriggerChannel], mode);
-  }
-
-  if (digitalRead(CLK_PIN) == true) {             // If we're using an external clock pulse.
-    if ((extClkV > 512) && (prevExtClk < 128)) {  // Check to see if the pulse just went high.
-      delayTime = thisTime - prevTime;            // If so, then capture the msec delayTime associated with the external pulse.
-      triggered = true;                           // Note that we've just triggered a new step in the sequence.
+      prevExtClk = extClkV;                         // The current external clock input will be the previous input for the next loop.
     }
-    prevExtClk = extClkV;                         // The current external clock input will be the previous input for the next loop.
-  }
-  else                                            // If we're using the internal clock to generate pulses.
-  {
-    if ((thisTime - prevTime) > delayTime ) {     // Check to see if we've waited long enough for the next step in the sequence.
-      triggered = true;                           // Note that we've triggered a new step in the sequence.
-    }
-  }
-  unsigned int trigWidth = map(triggerWidthPotValue, 0, 1023, delayTime  / 2, delayTime  / 50); // Calculate the pulse width based on the potentiometer setting and clock.
-  if ((thisTime - prevTime) > trigWidth) {        // Turn off the trigger outputs if the pulse width has elapsed.
-    digitalWrite(TRIG_A_PIN, HIGH);
-    digitalWrite(TRIG_B_PIN, HIGH);
-    digitalWrite(TRIG_C_PIN, HIGH);
-    digitalWrite(TRIG_D_PIN, HIGH);
-    digitalWrite(SEQ_CLOCK_OUT_PIN, HIGH);
-  }
-
-  // For each trigger channel we keep track of at which step we area separate step.
-  if (triggered) {                                // If we're triggering a new step in the sequence.
-    prevTime = thisTime;                          // The current time will be the previous time in the next loop.
-    for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
-      step[triggerChannel]++;               // Increment the step counter.
-      if (step[triggerChannel] > currentPatch.patternLength[triggerChannel] - 1) {
-        step[triggerChannel] = 0; // Reset the step counter if we've gone through all the beats for this trigger channel.
+    else                                            // If we're using the internal clock to generate pulses.
+    {
+      if ((thisTime - prevTime) > delayTime ) {     // Check to see if we've waited long enough for the next step in the sequence.
+        triggered = true;                           // Note that we've triggered a new step in the sequence.
       }
     }
-    // Show a cursor by lighting up each pixel and using color to show what mode we are in.
-    getCursorColor(mode, R, G, B);
-    // Light up the current step pixel with a color to indicate the current mode.
-    pixels.setPixelColor(step[selectedTriggerChannel], pixels.Color(4 * R, 4 * G, 4 * B));   
-    // Show/refresh all pixels.
-    pixels.show(); 
+    unsigned int trigWidth = map(triggerWidthPotValue, 0, 1023, delayTime  / 2, delayTime  / 50); // Calculate the pulse width based on the potentiometer setting and clock.
+    if ((thisTime - prevTime) > trigWidth) {        // Turn off the trigger outputs if the pulse width has elapsed.
+      digitalWrite(TRIG_A_PIN, HIGH);
+      digitalWrite(TRIG_B_PIN, HIGH);
+      digitalWrite(TRIG_C_PIN, HIGH);
+      digitalWrite(TRIG_D_PIN, HIGH);
+      digitalWrite(SEQ_CLOCK_OUT_PIN, HIGH);
+    }
 
-    // Turn on trigger output + LED A..D if the current step is in the Euclidean Rhythm.
-    if (currentPatch.channelPattern[TRIG_A] & (1 << step[TRIG_A])) digitalWrite(TRIG_A_PIN, LOW);
-    if (currentPatch.channelPattern[TRIG_B] & (1 << step[TRIG_B])) digitalWrite(TRIG_B_PIN, LOW);
-    if (currentPatch.channelPattern[TRIG_C] & (1 << step[TRIG_C])) digitalWrite(TRIG_C_PIN, LOW);
-    if (currentPatch.channelPattern[TRIG_D] & (1 << step[TRIG_D])) digitalWrite(TRIG_D_PIN, LOW);     
-    digitalWrite(SEQ_CLOCK_OUT_PIN, LOW);
+    // For each trigger channel we keep track of at which step we area separate step.
+    if (triggered) {                                // If we're triggering a new step in the sequence.
+      prevTime = thisTime;                          // The current time will be the previous time in the next loop.
+      for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) {
+        step[triggerChannel]++;               // Increment the step counter.
+        if (step[triggerChannel] > currentPatch.patternLength[triggerChannel] - 1) {
+          step[triggerChannel] = 0; // Reset the step counter if we've gone through all the beats for this trigger channel.
+        }
+      }
+      // Show a cursor by lighting up each pixel and using color to show what mode we are in.
+      getCursorColor(mode, R, G, B);
+      // Light up the current step pixel with a color to indicate the current mode.
+      pixels.setPixelColor(step[selectedTriggerChannel], pixels.Color(4 * R, 4 * G, 4 * B));   
+      // Show/refresh all pixels.
+      pixels.show(); 
+
+      // Turn on trigger output + LED A..D if the current step is in the Euclidean Rhythm.
+      if (currentPatch.channelPattern[TRIG_A] & (1 << step[TRIG_A])) digitalWrite(TRIG_A_PIN, LOW);
+      if (currentPatch.channelPattern[TRIG_B] & (1 << step[TRIG_B])) digitalWrite(TRIG_B_PIN, LOW);
+      if (currentPatch.channelPattern[TRIG_C] & (1 << step[TRIG_C])) digitalWrite(TRIG_C_PIN, LOW);
+      if (currentPatch.channelPattern[TRIG_D] & (1 << step[TRIG_D])) digitalWrite(TRIG_D_PIN, LOW);     
+      digitalWrite(SEQ_CLOCK_OUT_PIN, LOW);
+    }
   }
-}
+#endif
