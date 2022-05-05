@@ -21,6 +21,7 @@
    *     a new euclidean pattern is generated and this pattern is started from its starting position
    *     for the active pattern.
    * 2022-04-29: The mode from which a jump into program mode is made is restored when leaving program mode.
+   * 2022-05-05: Code adapted to function inputs using negative logic.
    *   
    *  Compile, upload and run the code one time with the INITIALIZE flag set.
    *  This will result in the nano writing 16 patches to its EEPROM.
@@ -58,7 +59,7 @@
 // Show some debug info on the serial port.
 #define DEBUG 1
 
-//#define INITIALIZE 1
+#define INITIALIZE 1
 
 // Use the switches below to make the brightness of the neopixel oscillate.
 
@@ -138,9 +139,7 @@ Encoder myEnc(3, 4);              // Attach rotary encoder to digital pins 3 and
 
 char CHANNEL_NAMES[4] = {'D', 'C', 'B', 'A'};
 
-#ifdef DEBUG
-  char tmp[255];
-#endif
+char msg[255];
 
 static int step[4];               // The active step for each trigger channel.
 struct Patch {
@@ -454,37 +453,35 @@ void createEmptyPatch(Patch &dstPatch) {
 
 void displayPatch(int patchNumber) {
   // For debug purposes.
-  char tmp[255];
-  sprintf(tmp, "patchNumber: %d", patchNumber);
-  Serial.println(tmp);
+  sprintf(msg, "patchNumber: %d", patchNumber);
+  Serial.println(msg);
   for (int j = 0; j < 4; j++) {
-    sprintf(tmp, "pulses[%d] = %d", j, patches[patchNumber].pulses[j]);
-    Serial.println(tmp);
+    sprintf(msg, "pulses[%d] = %d", j, patches[patchNumber].pulses[j]);
+    Serial.println(msg);
   }
   for (int j = 0; j < 4; j++) {
-    sprintf(tmp, "pattern[%d] = %d", j, patches[patchNumber].channelPattern[j]);
-    Serial.println (tmp);
+    sprintf(msg, "pattern[%d] = %d", j, patches[patchNumber].channelPattern[j]);
+    Serial.println (msg);
   } 
   for (int j = 0; j < 4; j++) {
-    sprintf(tmp, "length[%d] = %d", j, patches[patchNumber].patternLength[j]);
-    Serial.println(tmp);
+    sprintf(msg, "length[%d] = %d", j, patches[patchNumber].patternLength[j]);
+    Serial.println(msg);
   } Serial.print("\n");
 }
 
 void displayPatch(Patch thisPatch) {
   // For debug purposes.
-  char tmp[255];
   for (int j = 0; j < 4; j++) {
-    sprintf(tmp, "pulses[%d] = %d", j, thisPatch.pulses[j]);
-    Serial.println(tmp);
+    sprintf(msg, "pulses[%d] = %d", j, thisPatch.pulses[j]);
+    Serial.println(msg);
   }
   for (int j = 0; j < 4; j++) {
-    sprintf(tmp, "pattern[%d] = %d", j, thisPatch.channelPattern[j]);
-    Serial.println (tmp);
+    sprintf(msg, "pattern[%d] = %d", j, thisPatch.channelPattern[j]);
+    Serial.println (msg);
   } 
   for (int j = 0; j < 4; j++) {
-    sprintf(tmp, "length[%d] = %d", j, thisPatch.patternLength[j]);
-    Serial.println(tmp);
+    sprintf(msg, "length[%d] = %d", j, thisPatch.patternLength[j]);
+    Serial.println(msg);
   } Serial.print("\n");  
 }
 
@@ -573,7 +570,6 @@ void initializePatchInEeprom() {
   unsigned int memoryCellsInUse = 0;
   int selectedTriggerChannel = 3;
   int delayTime = 95;
-  char tmp[100];
 
   int pulses[4];             // The number of pulses to be generated for each of the 4 triggers.
   int patternLength[4];      // The pattern length for each trigger output.
@@ -596,8 +592,8 @@ void initializePatchInEeprom() {
   patternLength[2] = 15;
   patternLength[3] = 12;
 
-  sprintf(tmp, "sizeof patch: %d", sizeof(patches));
-  Serial.println(tmp);
+  sprintf(msg, "sizeof patch: %d", sizeof(patches));
+  Serial.println(msg);
   for (int j = 0; j < 4; j++) {
     patches[initialPatchNr].pulses[j] = pulses[j];
     Serial.print(patches[initialPatchNr].pulses[j]);
@@ -614,10 +610,10 @@ void initializePatchInEeprom() {
     Serial.print(" ");
   } Serial.print("\n");
   memoryCellsInUse = memoryCellsInUse | (1 << initialPatchNr);
-  sprintf(tmp, "patchNr %d created.", initialPatchNr);
-  Serial.println(tmp);
-  sprintf(tmp, "memoryCellsInUse: %d", memoryCellsInUse);
-  Serial.println(tmp);
+  sprintf(msg, "patchNr %d created.", initialPatchNr);
+  Serial.println(msg);
+  sprintf(msg, "memoryCellsInUse: %d", memoryCellsInUse);
+  Serial.println(msg);
   // The rest of the 16 patterns are empty.
   for (patchNr = 1; patchNr < NR_OF_MEMORY_CELLS; patchNr++) {
       for (int i = 0; i < 4; i++) {
@@ -664,16 +660,16 @@ void setup() {
     chosenPatchNumber = readPatchesFromEEPROM(patches, memoryCellsInUse, delayTime, selectedTriggerChannel);
     candidatePatchNumber = chosenPatchNumber;
     // Load the current patch with the stored information.
-    sprintf(tmp, "Reading patch info from EEPROM.");
-    Serial.println(tmp);
-    sprintf(tmp, "Restoring patch: %d", chosenPatchNumber);
-    Serial.println(tmp);
+    sprintf(msg, "Reading patch info from EEPROM.");
+    Serial.println(msg);
+    sprintf(msg, "Restoring patch: %d", chosenPatchNumber);
+    Serial.println(msg);
     copyPatch(patches[chosenPatchNumber], currentPatch);
     displayPatch(currentPatch);
-    sprintf(tmp, "Setting speed to: %d", delayTime);
-    Serial.println(tmp);
-    sprintf(tmp, "Selecting channel: %c", CHANNEL_NAMES[selectedTriggerChannel]);
-    Serial.println(tmp);
+    sprintf(msg, "Setting speed to: %d", delayTime);
+    Serial.println(msg);
+    sprintf(msg, "Selecting channel: %c", CHANNEL_NAMES[selectedTriggerChannel]);
+    Serial.println(msg);
 #endif  
   // Initialize step count for each trigger channel.
   for (int triggerChannel = 0; triggerChannel < 4; triggerChannel++) { 
@@ -709,11 +705,11 @@ void setup() {
     bool triggered = false;                     // Assume that no new step is going to occur this loop.
     long newPosition = myEnc.read();            // Read the current number of encoder counts.
     int triggerWidthPotValue = analogRead(POT_PIN); // Read the trigger pulse width potentiometer value.
-    int extClkV    = analogRead(EXT_CLK_PIN);   // Read the external clock input.
-    int f1In       = analogRead(F1_PIN);        // Read the Func 1 input, will return 0 if no signal present, else 255
-    int f2In       = analogRead(F2_PIN);        // Read the Func 2 input
-    int f3In       = analogRead(F3_PIN);        // Read the Func 3 input
-    int f4In       = analogRead(F4_PIN);        // Read the Func 4 input
+    int extClkV    = 1024 - analogRead(EXT_CLK_PIN);   // Read the external clock input.
+    int f1In       = 1024 - analogRead(F1_PIN); // Read the Func 1 input, will return a low value if no signal is present, else a high value
+    int f2In       = 1024 - analogRead(F2_PIN); // Read the Func 2 input
+    int f3In       = 1024 - analogRead(F3_PIN); // Read the Func 3 input
+    int f4In       = 1024 - analogRead(F4_PIN); // Read the Func 4 input
     int resetPinIn = digitalRead(RESET_PIN);    // Read the external RESET_PIN input
     int shiftButton = digitalRead(SHIFT_PIN);   // Read the shift/tap tempo button (will be HIGH when pressed);
     int programButtonName = -1;
