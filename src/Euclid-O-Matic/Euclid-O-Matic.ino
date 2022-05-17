@@ -59,7 +59,7 @@
 // Show some debug info on the serial port.
 #define DEBUG 1
 
-#define INITIALIZE 1
+//#define INITIALIZE 1
 
 // Use the switches below to make the brightness of the neopixel oscillate.
 
