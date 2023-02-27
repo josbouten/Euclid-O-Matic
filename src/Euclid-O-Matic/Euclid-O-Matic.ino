@@ -54,10 +54,15 @@
    *  
    *  The leds will light up red for the locations containing a patch and green for the locations that are cleared.
    *  When in 'Program Mode' pressing the rotary switch will switch to 'Pattern Length / Tempo Mode'.
+   *  
+   *  2022-02-27: deactivated pattern length change menu
    */
 
 // Show some debug info on the serial port.
 #define DEBUG 1
+
+// Activate this if you allow pattern length change
+// #define ALLOW_PATTERN_LENGTH_CHANGE 1
 
 //#define INITIALIZE 1
 
@@ -245,7 +250,7 @@ int checkProgramButtons(int &selectedProgramButtonName) {
   return 0;
 }
 
-bool checkButtons(int &selectedChannel, int shiftButton) {
+bool checkButtons(int &selectedChannel, int escapeButton) {
   // Note: the selectedChannel will only change if a button is pressed.
   static int previousSelectedChannel = -1;
   static bool change = false;
@@ -257,8 +262,8 @@ bool checkButtons(int &selectedChannel, int shiftButton) {
   // Pattern/trigger A will be shown in yellow .
 
   int buttonValue = analogRead(BUTTON_PIN); 
-  // Read the voltage divider output and only change the selectedChannel if shiftButton is not pressed.
-  if (shiftButton == 0) {       
+  // Read the voltage divider output and only change the selectedChannel if escapeButton is not pressed.
+  if (escapeButton == 0) {       
     if ((buttonValue > 0.40 * MAX_ADC_VALUE) && (buttonValue < 0.60 * MAX_ADC_VALUE)) selectedChannel = TRIG_D; // Select pattern/trigger D if the first button is pressed
     if ((buttonValue > 0.64 * MAX_ADC_VALUE) && (buttonValue < 0.73 * MAX_ADC_VALUE)) selectedChannel = TRIG_C; // Select pattern/trigger C if the second button is pressed
     if ((buttonValue > 0.75 * MAX_ADC_VALUE) && (buttonValue < 0.84 * MAX_ADC_VALUE)) selectedChannel = TRIG_B; // Select pattern/trigger B if the third button is pressed
@@ -686,7 +691,13 @@ void setup() {
   }
 #else
   void loop() {
-    static int mode       = PATTERN_LENGTH_MODE - 1;// This sequencer mode will persist in each loop.
+    
+// Activate this if you allow pattern length change
+    #ifdef ALLOW_PATTERN_LENGTH_CHANGE
+      static int mode = PATTERN_LENGTH_MODE;
+    #else
+      static int mode = NUM_PULSE_MODE;
+    #endif    
     static int prevMode = 0;
     static long mode1Pos  = 0;              // The last encoder position in mode 1 is stored for a future return to that mode.
     static int prevExtClk = 0;              // Store the previous External Clock Pulse value for transition checking.
@@ -711,7 +722,7 @@ void setup() {
     int f3In       = 1024 - analogRead(F3_PIN); // Read the Func 3 input
     int f4In       = 1024 - analogRead(F4_PIN); // Read the Func 4 input
     int resetPinIn = digitalRead(RESET_PIN);    // Read the external RESET_PIN input
-    int shiftButton = digitalRead(SHIFT_PIN);   // Read the shift/tap tempo button (will be HIGH when pressed);
+    int escapeButton = digitalRead(SHIFT_PIN);   // Read the shift/tap tempo button (will be HIGH when pressed);
     int programButtonName = -1;
     int programButtonValue;
     static int prevProgramButtonValue = 0;
@@ -725,7 +736,7 @@ void setup() {
         prevProgramButtonValue = 0;
       }
     } else {
-      change = checkButtons(selectedTriggerChannel, shiftButton);// Query the trigger buttons and update the active trigger if needed.
+      change = checkButtons(selectedTriggerChannel, escapeButton);// Query the trigger buttons and update the active trigger if needed.
       if (change) { // Remember the channel chosen (this will be recalled when powering up).
         writeTriggerChannelToEEPROM(selectedTriggerChannel);
       }
@@ -738,7 +749,7 @@ void setup() {
 
     if ((prog == true) && (prevProg == false)) { // If the encoder switch was just pressed, we need to switch modes.
       if (mode == 1) mode1Pos = newPosition;     // Store the current encoder position for a future return to that mode.
-      if (shiftButton) {                         // If the shift button is pressed as well, then we start the program mode.
+      if (escapeButton) {                         // If the shift button is pressed as well, then we start the program mode.
         prevMode = mode;
         mode = PROGRAM_MODE;
       } else {
@@ -746,8 +757,13 @@ void setup() {
           mode = prevMode;                       // Return to mode from which we jumped into program mode
         } else {
           mode++;                                // Cycle to the next mode.
-          if (mode > MAX_MODE) mode = 1;         // Go back to mode 0 after mode MAX_MODE.
-          if (mode == 1) {                       // Restore the encoder position when last in the current mode.
+          if (mode > MAX_MODE) 
+            #ifdef ALLOW_PATTERN_LENGTH_CHANGE
+              mode = PATTERN_LENGTH_MODE; 
+            #else
+              mode = NUM_PULSE_MODE;
+            #endif
+          if (mode == PATTERN_LENGTH_MODE) {                       // Restore the encoder position when last in the current mode.
             myEnc.write(mode1Pos);
             newPosition = mode1Pos;
           }
@@ -794,9 +810,50 @@ void setup() {
     }
 
     switch (mode) {
-      case PATTERN_LENGTH_MODE: // Mode 1 - Manually adjust the pattern tempo (based on the internal clock).
-        if (shiftButton) {      // We only allow for changing the tempo IF the tap tempo button is pressed at the same
-                                // time the rotary encoder is operated (otherwise the pattern length can be changed (see below)).
+      #ifdef PATERN_LENGTH_CHANGE_MODE
+        case PATTERN_LENGTH_MODE: // Mode 1 - Manually adjust the pattern tempo (based on the internal clock).
+          if (escapeButton) {      // We only allow for changing the tempo IF the tap tempo button is pressed at the same
+                                  // time the rotary encoder is operated (otherwise the pattern length can be changed (see below)).
+            // Increase/decrease the speed of the clock
+            if (newPosition < oldPosition - 3) {
+              delayTime -= 1;
+              if (delayTime  < 10) delayTime  = 10;  // Limit the fastest loop time to 10 per step, which is crazy fast.
+              oldPosition = newPosition;             // The current encoder position will be the old position next loop.
+            } else if (newPosition > oldPosition + 3) {
+              delayTime  += 1;        // The internal time delayTime  is proportional to the encoder position.
+              if (delayTime  > MAX_DELAY_TIME) delayTime  = MAX_DELAY_TIME;  // Limit the slowest loop time to 1 sec per step.
+              // Change if you want slower tempos.          
+              oldPosition = newPosition;           // The current encoder position will be the old position next loop.          
+            }      
+          }
+          else { // Increase/decrease the pattern length for the active pattern.
+            if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
+              currentPatch.patternLength[selectedTriggerChannel]++;// Increase the pattern length by 1 for the active pattern.
+              if (currentPatch.patternLength[selectedTriggerChannel] > NUM_NEOP_LEDS) {
+                currentPatch.patternLength[selectedTriggerChannel] = NUM_NEOP_LEDS;
+              }
+              oldPosition = newPosition;              // The current encoder position will be the old position next loop.
+              // Compute a Euclidean Rhythm for the active pattern.
+              currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+              // Restart all patterns
+              resetSteps(step);
+            } else if (newPosition > oldPosition + 3) {      // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+              currentPatch.patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
+              if (currentPatch.patternLength[selectedTriggerChannel] < 0) {
+                currentPatch.patternLength[selectedTriggerChannel] = 0;
+              }
+              oldPosition = newPosition;              // The current encoder position will be the old position next loop.
+              // Compute a Euclidean Rhythm for the active pattern.
+              currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
+                        // Restart all patterns
+              resetSteps(step);
+            }
+          }
+          break;
+    #endif
+      case NUM_PULSE_MODE: // Mode 2 - Change the number of Euclidean Rhythm pulses of the active pattern.
+       if (escapeButton) { // We only allow for changing the tempo IF the tap tempo button is pressed at the same
+                           // time the rotary encoder is operated (otherwise the number of pulses can be changed (see below)).
           // Increase/decrease the speed of the clock
           if (newPosition < oldPosition - 3) {
             delayTime -= 1;
@@ -808,63 +865,57 @@ void setup() {
             // Change if you want slower tempos.          
             oldPosition = newPosition;           // The current encoder position will be the old position next loop.          
           }      
-        }
-        else { // Increase/decrease the pattern length for the active pattern.
+        } 
+        else 
+        {
           if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-            currentPatch.patternLength[selectedTriggerChannel]++;// Increase the pattern length by 1 for the active pattern.
-            if (currentPatch.patternLength[selectedTriggerChannel] > NUM_NEOP_LEDS) {
-              currentPatch.patternLength[selectedTriggerChannel] = NUM_NEOP_LEDS;
+            currentPatch.pulses[selectedTriggerChannel]++;       // Increase the number of pulses in the active pattern.
+            if (currentPatch.pulses[selectedTriggerChannel] > currentPatch.patternLength[selectedTriggerChannel]) {
+              currentPatch.pulses[selectedTriggerChannel] = currentPatch.patternLength[selectedTriggerChannel];// Limit the largest number of pulses to NumSteps.
             }
             oldPosition = newPosition;              // The current encoder position will be the old position next loop.
             // Compute a Euclidean Rhythm for the active pattern.
             currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
             // Restart all patterns
             resetSteps(step);
-          } else if (newPosition > oldPosition + 3) {      // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-            currentPatch.patternLength[selectedTriggerChannel]--;// Decrease the pattern length by 1 for the active pattern.
-            if (currentPatch.patternLength[selectedTriggerChannel] < 0) {
-              currentPatch.patternLength[selectedTriggerChannel] = 0;
+          } else if (newPosition > oldPosition + 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+            currentPatch.pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
+            if (currentPatch.pulses[selectedTriggerChannel] < 0) {
+              currentPatch.pulses[selectedTriggerChannel] = 0;            // Limit the smallest number of pulses to zero.
             }
             oldPosition = newPosition;              // The current encoder position will be the old position next loop.
             // Compute a Euclidean Rhythm for the active pattern.
             currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
-                      // Restart all patterns
+            // Restart all patterns
             resetSteps(step);
           }
-          break;
-        }
-        break;
-      case NUM_PULSE_MODE: // Mode 2 - Change the number of Euclidean Rhythm pulses of the active pattern.
-        if (newPosition < oldPosition - 3) {      // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-          currentPatch.pulses[selectedTriggerChannel]++;       // Increase the number of pulses in the active pattern.
-          if (currentPatch.pulses[selectedTriggerChannel] > currentPatch.patternLength[selectedTriggerChannel]) {
-            currentPatch.pulses[selectedTriggerChannel] = currentPatch.patternLength[selectedTriggerChannel];// Limit the largest number of pulses to NumSteps.
-          }
-          oldPosition = newPosition;              // The current encoder position will be the old position next loop.
-          // Compute a Euclidean Rhythm for the active pattern.
-          currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
-          // Restart all patterns
-          resetSteps(step);
-        } else if (newPosition > oldPosition + 3) { // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-          currentPatch.pulses[selectedTriggerChannel]--;       // Decrease the number of pulses in the active pattern.
-          if (currentPatch.pulses[selectedTriggerChannel] < 0) {
-            currentPatch.pulses[selectedTriggerChannel] = 0;            // Limit the smallest number of pulses to zero.
-          }
-          oldPosition = newPosition;              // The current encoder position will be the old position next loop.
-          // Compute a Euclidean Rhythm for the active pattern.
-          currentPatch.channelPattern[selectedTriggerChannel] = euclid(currentPatch, selectedTriggerChannel);
-          // Restart all patterns
-          resetSteps(step);
         }
         break;
       case ROTATE_MODE: // Mode 3 - Rotate the Euclidean Rhythm of the active pattern.
-        if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
-          oldPosition = newPosition;               // The current encoder position will be the old position next loop.
-          rotateRight(currentPatch, selectedTriggerChannel);
-        } else if (newPosition < oldPosition - 3){ // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
-          oldPosition = newPosition;               // The current encoder position will be the old position next loop.
-          // Rotate the active pattern one bit to the left (clockwise).
-          rotateLeft(currentPatch, selectedTriggerChannel);
+       if (escapeButton) { // We only allow for changing the tempo IF the tap tempo button is pressed at the same
+                           // time the rotary encoder is operated (otherwise the number of pulses can be changed (see below)).
+          // Increase/decrease the speed of the clock
+          if (newPosition < oldPosition - 3) {
+            delayTime -= 1;
+            if (delayTime  < 10) delayTime  = 10;  // Limit the fastest loop time to 10 per step, which is crazy fast.
+            oldPosition = newPosition;             // The current encoder position will be the old position next loop.
+          } else if (newPosition > oldPosition + 3) {
+            delayTime  += 1;        // The internal time delayTime  is proportional to the encoder position.
+            if (delayTime  > MAX_DELAY_TIME) delayTime  = MAX_DELAY_TIME;  // Limit the slowest loop time to 1 sec per step.
+            // Change if you want slower tempos.          
+            oldPosition = newPosition;           // The current encoder position will be the old position next loop.          
+          }      
+        } 
+        else 
+        {      
+          if (newPosition > oldPosition + 3) {       // Do something if the encoder has increased by 1 detent (4 pulses for my encoder).
+            oldPosition = newPosition;               // The current encoder position will be the old position next loop.
+            rotateRight(currentPatch, selectedTriggerChannel);
+          } else if (newPosition < oldPosition - 3){ // Do something if the encoder has decreased by 1 detent (4 pulses for my encoder).
+            oldPosition = newPosition;               // The current encoder position will be the old position next loop.
+            // Rotate the active pattern one bit to the left (clockwise).
+            rotateLeft(currentPatch, selectedTriggerChannel);
+          }
         }
         break;
       case PROGRAM_MODE: // Mode 4 - Store all patterns to eprom and store the current patchnumber / recall all patterns
