@@ -55,7 +55,7 @@
    *  The leds will light up red for the locations containing a patch and green for the locations that are cleared.
    *  When in 'Program Mode' pressing the rotary switch will switch to 'Pattern Length / Tempo Mode'.
    *  
-   *  2022-02-27: deactivated pattern length change menu
+   *  2022-02-27: deactivated pattern length change menu; added tempo change to rotate and pulse number menu.
    */
 
 // Show some debug info on the serial port.
