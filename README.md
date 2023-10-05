@@ -1,6 +1,6 @@
 # Euclid-O-Matic
 
-![Euclid-O-Matic Euclidean Sequencer](20220212_Euclid-O-Matic_v0.1.jpg)
+![Euclid-O-Matic Euclidean Sequencer](20230228_205908_Euclid-O-Matic_v0.1.jpg)
 
 Sun Apr  3 15:01:35 CEST 2022
 
@@ -20,3 +20,8 @@ Amongst others I added support for:
     a reset input.
 
 Using the F-1 … F-4 CV inputs the patterns can be shifted stepwise.
+
+5th October 2023
+Added mute buttons for the trigger channels, 
+Switched off the pattern length menu (but kept it in the code
+just in case) because I wasn't using it.
